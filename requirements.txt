@@ -1,0 +1,7 @@
+great_expectations>=1.0.0
+sqlalchemy
+mysql-connector-python
+pandas
+toml
+pyyaml
+streamlit

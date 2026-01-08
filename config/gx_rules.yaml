@@ -1,0 +1,77 @@
+# ==========================================
+# DATA QUALITY RULES REGISTRY
+# ==========================================
+# Structure: Table Name -> List of Expectations
+
+tables:
+  # ----------------------------------------
+  # TABLE 1: application_to_lender
+  # ----------------------------------------
+  application_to_lender:
+    - name: "check_application_id_not_null"
+      type: "expect_column_values_to_not_be_null"
+      kwargs:
+        column: "application_id"
+      meta:
+        severity: "critical"
+
+    - name: "check_valid_auto_decision"
+      type: "expect_column_values_to_be_in_set"
+      kwargs:
+        column: "app_auto_decision"
+        value_set: ["APPROVED", "DECLINED", "SOFT_PENDING", "ERROR"]
+      meta:
+        severity: "warning"
+
+  # ----------------------------------------
+  # TABLE 2: LOAN_DETAILS
+  # ----------------------------------------
+  loan_details:
+    - name: "check_loan_id_unique"
+      type: "expect_column_values_to_be_unique"
+      kwargs:
+        column: "loan_id"
+      meta:
+        severity: "critical"
+
+    # SQL Test: Amount must be greater than 0
+    # Note: We use 'expect_column_values_to_be_between' for better performance than raw SQL
+    - name: "check_positive_amount"
+      type: "expect_column_values_to_be_between"
+      kwargs:
+        column: "sanctioned_amount"
+        min_value: 1  # Effectively > 0
+        max_value: 999999999
+      meta:
+        severity: "critical"
+
+    - name: "check_term_range_sql"
+      type: "unexpected_rows_expectation"
+      kwargs:
+        unexpected_rows_query: |
+          SELECT loan_id, term_value
+          FROM loan_details
+          WHERE term_value < 12 OR term_value > 300;
+      meta:
+        severity: "critical"
+        description: "Term must be between 12 and 300 months"
+
+  # ----------------------------------------
+  # TABLE 3: application_approval_to_funding 
+  # ----------------------------------------
+  application_approval_to_funding:
+    # COMPLEX QUERY: JOIN CHECK
+    # Scenario: Verify we don't have an empty selected_offer_id for a closed loan.
+    # We select the "Bad Rows" (Failures). If count > 0, the test fails.
+    - name: "check_selected_offerid_loan"
+      type: "unexpected_rows_expectation"
+      kwargs:
+        unexpected_rows_query: |
+          SELECT atf.application_id, selected_offer_id 
+          FROM v73__application_approval_to_funding AS atf
+          INNER JOIN v73__loan_details AS ld
+          ON atf.application_id = ld.application_id
+          WHERE selected_offer_id IS NULL;
+      meta:
+        severity: "critical"
+        description: "Found Empty Selected Offer Id linked to Closed Loans (Data Integrity Breach)"
