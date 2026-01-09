@@ -1,2 +1,4 @@
 secrets.toml
 myvenv/
+dq_system.log
+.DS_Store

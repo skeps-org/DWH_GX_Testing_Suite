@@ -5,7 +5,10 @@ import pandas as pd
 import logging
 import logging.config
 import os
-from great_expectations import expectations as gxe
+import warnings
+
+# Suppress the "batch parameter" warning from GX
+warnings.filterwarnings("ignore", message="unexpected_rows_query should contain")
 
 if not os.path.exists('logs'):
     os.makedirs('logs')
@@ -23,11 +26,6 @@ class GXRunner:
         return f"mysql+mysqlconnector://{creds['user']}:{creds['password']}@{creds['host']}:{creds.get('port', 3306)}/{creds['db']}"
 
     def run_validation(self, lender_id, specific_table=None):
-        """
-        Runs validation.
-        If specific_table is provided, runs only that table.
-        If None, runs ALL tables defined in YAML.
-        """
         logger.info(f"Initializing GX for {lender_id}...")
         all_results = []
         
@@ -36,14 +34,10 @@ class GXRunner:
             creds = self.secrets[lender_id]
             ds_name = f"ds_{lender_id}"
             
-            # Setup Data Source
             conn_str = self._build_connection_string(creds)
             data_source = context.data_sources.add_sql(name=ds_name, connection_string=conn_str)
             
-            # Decide which tables to process
             if specific_table:
-                # If the UI asked for a table that isn't in YAML, we can't test it easily 
-                # because we don't have rules for it.
                 if specific_table not in self.rules['tables']:
                     logger.warning(f"Table {specific_table} requested but not found in rules YAML.")
                     return pd.DataFrame()
@@ -52,7 +46,6 @@ class GXRunner:
                 target_tables = list(self.rules['tables'].keys())
             
             for table_name in target_tables:
-                # 1. Add Asset
                 asset_name = f"asset_{lender_id}_{table_name}"
                 try:
                     data_asset = data_source.get_asset(asset_name)
@@ -60,29 +53,33 @@ class GXRunner:
                     data_asset = data_source.add_table_asset(name=asset_name, table_name=table_name)
                 
                 batch_def = data_asset.add_batch_definition_whole_table(f"batch_{table_name}")
-                
-                # 2. Build Suite
                 suite_name = f"suite_{lender_id}_{table_name}"
                 suite = context.suites.add(gx.ExpectationSuite(name=suite_name))
                 
                 table_rules = self.rules['tables'][table_name]
                 
+                from great_expectations import expectations as gxe
+                
                 for exp_config in table_rules:
-                    # Special handling for SQL Expectations
+                    # 1. PREPARE METADATA
+                    # We inject the YAML 'name' into the meta dict so it survives execution
+                    meta_data = exp_config.get('meta', {})
+                    meta_data['test_alias'] = exp_config.get('name') 
+
                     if exp_config['type'] == "unexpected_rows_expectation":
-                        suite.add_expectation(gxe.UnexpectedRowsExpectation(**exp_config['kwargs']))
+                        exp_instance = gxe.UnexpectedRowsExpectation(**exp_config['kwargs'])
+                        exp_instance.meta = meta_data
+                        suite.add_expectation(exp_instance)
                     else:
-                        # Standard handling
                         camel_name = "".join([x.capitalize() for x in exp_config['type'].split('_')])
                         if hasattr(gxe, camel_name):
                             exp_class = getattr(gxe, camel_name)
                             exp_instance = exp_class(**exp_config['kwargs'])
-                            exp_instance.meta = exp_config.get('meta', {})
+                            exp_instance.meta = meta_data
                             suite.add_expectation(exp_instance)
                         else:
                             logger.warning(f"Expectation {camel_name} not found.")
 
-                # 3. Run Checkpoint
                 val_def = context.validation_definitions.add(
                     gx.ValidationDefinition(data=batch_def, suite=suite, name=f"val_{lender_id}_{table_name}")
                 )
@@ -94,7 +91,6 @@ class GXRunner:
                 result = checkpoint.run()
                 df = self._parse_results(lender_id, result)
                 
-                # Tag the table name so we know where the error came from
                 if not df.empty:
                     df['table'] = table_name
                 
@@ -118,30 +114,38 @@ class GXRunner:
 
     def _parse_results(self, lender_id, checkpoint_result):
         parsed_rows = []
+        
+        # Handle GX result unwrapping
         run_result = list(checkpoint_result.run_results.values())[0]
-        validation_result = run_result['validation_result']
+        if isinstance(run_result, dict) and 'validation_result' in run_result:
+            validation_result = run_result['validation_result']
+        else:
+            validation_result = run_result
         
         for res in validation_result.results:
             success = res.success
             status = "PASS" if success else "FAIL"
             
             exp_config = res.expectation_config
-            severity = exp_config.meta.get('severity', 'warning')
+            meta = exp_config.meta or {}
             
-            # Handling expectation types differently for display
-            if exp_config.type == "unexpected_rows_expectation":
-                test_name = "Custom SQL Logic"
-                # For SQL expectations, kwargs might not have 'column'
-                col_name = "N/A"
+            # 2. EXTRACT NAME
+            # Check for our custom alias first
+            if 'test_alias' in meta and meta['test_alias']:
+                display_name = meta['test_alias']
             else:
-                test_name = exp_config.type
-                col_name = exp_config.kwargs.get('column', 'table_level')
+                # Fallback to type if name is missing
+                if exp_config.type == "unexpected_rows_expectation":
+                    display_name = "Custom SQL Check"
+                else:
+                    display_name = exp_config.type
 
+            severity = meta.get('severity', 'warning')
             unexpected_count = res.result.get('unexpected_count', 0)
             
             parsed_rows.append({
                 "lender": lender_id,
-                "test_name": f"{test_name} ({col_name})",
+                "test_name": display_name,  # Now uses the friendly name from YAML
                 "status": status,
                 "failed_rows": unexpected_count,
                 "severity": severity,
