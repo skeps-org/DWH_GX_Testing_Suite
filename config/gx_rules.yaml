@@ -7,7 +7,7 @@ tables:
   # ----------------------------------------
   # TABLE 1: application_to_lender
   # ----------------------------------------
-  application_to_lender:
+  v73__application_to_lender:
     - name: "check_application_id_not_null"
       type: "expect_column_values_to_not_be_null"
       kwargs:
@@ -26,7 +26,7 @@ tables:
   # ----------------------------------------
   # TABLE 2: LOAN_DETAILS
   # ----------------------------------------
-  loan_details:
+  v73__loan_details:
     - name: "check_loan_id_unique"
       type: "expect_column_values_to_be_unique"
       kwargs:
@@ -59,7 +59,7 @@ tables:
   # ----------------------------------------
   # TABLE 3: application_approval_to_funding 
   # ----------------------------------------
-  application_approval_to_funding:
+  v73__application_approval_to_funding:
     # COMPLEX QUERY: JOIN CHECK
     # Scenario: Verify we don't have an empty selected_offer_id for a closed loan.
     # We select the "Bad Rows" (Failures). If count > 0, the test fails.
