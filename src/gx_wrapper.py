@@ -6,6 +6,7 @@ import logging
 import logging.config
 import os
 import warnings
+import sqlalchemy
 
 # Ensure logs dir exists
 if not os.path.exists('logs'):
@@ -23,6 +24,18 @@ class GXRunner:
     def _build_connection_string(self, creds):
         return f"mysql+mysqlconnector://{creds['user']}:{creds['password']}@{creds['host']}:{creds.get('port', 3306)}/{creds['db']}"
 
+    def _get_table_count(self, creds, table_name):
+        try:
+            conn_str = self._build_connection_string(creds)
+            engine = sqlalchemy.create_engine(conn_str)
+            with engine.connect() as conn:
+                query = sqlalchemy.text(f"SELECT COUNT(*) FROM {table_name}")
+                result = conn.execute(query).scalar()
+                return int(result)
+        except Exception as e:
+            logger.warning(f"Could not fetch row count for {table_name}: {e}")
+            return 0 
+    
     def run_validation(self, lender_id, specific_table=None):
         logger.info(f"Initializing GX for {lender_id}...")
         all_results = []
@@ -111,7 +124,21 @@ class GXRunner:
                 "total_rows": 0
             }])
 
-    def _parse_results(self, lender_id, checkpoint_result, table_name):
+    def _extract_error_message(self, info_dict):
+        if not isinstance(info_dict, dict):
+            return None
+        if info_dict.get("exception_message"):
+            return info_dict.get("exception_message")
+        if info_dict.get("exception_traceback"):
+            return info_dict.get("exception_traceback").strip().split('\n')[-1]
+        for key, value in info_dict.items():
+            if isinstance(value, dict):
+                found = self._extract_error_message(value)
+                if found:
+                    return found
+        return None
+
+    def _parse_results(self, lender_id, checkpoint_result, table_name, creds):
         parsed_rows = []
         
         run_result = list(checkpoint_result.run_results.values())[0]
@@ -120,9 +147,33 @@ class GXRunner:
         else:
             validation_result = run_result
         
+        cached_table_count = None
+        
         for res in validation_result.results:
             success = res.success
-            status = "PASS" if success else "FAIL"
+            unexpected_count = int(res.result.get('unexpected_count', 0))
+            raw_element_count = int(res.result.get('element_count', 0))
+
+            if raw_element_count == 0:
+                if cached_table_count is None:
+                    cached_table_count = self._get_table_count(creds, table_name)
+                element_count = cached_table_count
+            else:
+                element_count = raw_element_count
+
+            if success:
+                status = "PASS"
+                error_msg = ""
+            elif unexpected_count > 0:
+                status = "FAIL"
+                error_msg = f"Found {unexpected_count} data failures"
+            else:
+                status = "ERROR"
+                raw_msg = self._extract_error_message(res.exception_info)
+                if raw_msg:
+                    error_msg = str(raw_msg)[:2000]
+                else:
+                    error_msg = "Unknown execution error (Check logs)"
             
             exp_config = res.expectation_config
             meta = exp_config.meta or {}
@@ -136,21 +187,18 @@ class GXRunner:
                     display_name = exp_config.type
 
             severity = meta.get('severity', 'warning')
+
             
             # --- NEW: Extract Integers ---
             unexpected_count = int(res.result.get('unexpected_count', 0))
             element_count = int(res.result.get('element_count', 0))
             
             # --- NEW: Detailed Logging ---
-            log_message = (
-                f"[{lender_id}] [{table_name}] Test: {display_name} | "
-                f"Status: {status} | Failures: {unexpected_count}/{element_count}"
-            )
-            
-            if status == "FAIL":
-                logger.warning(log_message)
+            log_msg = f"[{lender_id}] [{table_name}] Test: {display_name} | Status: {status}"
+            if status in ["FAIL", "ERROR"]:
+                logger.warning(f"{log_msg} - {error_msg}")
             else:
-                logger.info(log_message)
+                logger.info(log_msg)
             
             parsed_rows.append({
                 "lender": lender_id,
@@ -160,7 +208,7 @@ class GXRunner:
                 "failed_rows": unexpected_count,
                 "total_rows": element_count,
                 "severity": severity,
-                "error_msg": "" if success else f"Found {unexpected_count} failures"
+                "error_msg": error_msg
             })
             
         return pd.DataFrame(parsed_rows)
