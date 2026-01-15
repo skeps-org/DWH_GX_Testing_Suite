@@ -7,9 +7,7 @@ import logging.config
 import os
 import warnings
 
-# Suppress the "batch parameter" warning from GX
-warnings.filterwarnings("ignore", message="unexpected_rows_query should contain")
-
+# Ensure logs dir exists
 if not os.path.exists('logs'):
     os.makedirs('logs')
 
@@ -60,40 +58,46 @@ class GXRunner:
                 
                 from great_expectations import expectations as gxe
                 
-                for exp_config in table_rules:
-                    # 1. PREPARE METADATA
-                    # We inject the YAML 'name' into the meta dict so it survives execution
-                    meta_data = exp_config.get('meta', {})
-                    meta_data['test_alias'] = exp_config.get('name') 
+                # -----------------------------------------------------------------
+                # THE FIX: Wrap the CREATION of expectations, not just execution
+                # -----------------------------------------------------------------
+                with warnings.catch_warnings():
+                    # Catch the warning where it actually happens: during __init__
+                    warnings.filterwarnings("ignore", message=".*unexpected_rows_query should contain the {batch} parameter.*")
+                    
+                    for exp_config in table_rules:
+                        meta_data = exp_config.get('meta', {})
+                        meta_data['test_alias'] = exp_config.get('name') 
 
-                    if exp_config['type'] == "unexpected_rows_expectation":
-                        exp_instance = gxe.UnexpectedRowsExpectation(**exp_config['kwargs'])
-                        exp_instance.meta = meta_data
-                        suite.add_expectation(exp_instance)
-                    else:
-                        camel_name = "".join([x.capitalize() for x in exp_config['type'].split('_')])
-                        if hasattr(gxe, camel_name):
-                            exp_class = getattr(gxe, camel_name)
-                            exp_instance = exp_class(**exp_config['kwargs'])
+                        if exp_config['type'] == "unexpected_rows_expectation":
+                            # WARNING TRIGGERS HERE ->
+                            exp_instance = gxe.UnexpectedRowsExpectation(**exp_config['kwargs'])
                             exp_instance.meta = meta_data
                             suite.add_expectation(exp_instance)
                         else:
-                            logger.warning(f"Expectation {camel_name} not found.")
+                            camel_name = "".join([x.capitalize() for x in exp_config['type'].split('_')])
+                            if hasattr(gxe, camel_name):
+                                exp_class = getattr(gxe, camel_name)
+                                exp_instance = exp_class(**exp_config['kwargs'])
+                                exp_instance.meta = meta_data
+                                suite.add_expectation(exp_instance)
+                            else:
+                                logger.warning(f"Expectation {camel_name} not found.")
 
-                val_def = context.validation_definitions.add(
-                    gx.ValidationDefinition(data=batch_def, suite=suite, name=f"val_{lender_id}_{table_name}")
-                )
-                
-                checkpoint = context.checkpoints.add(
-                    gx.Checkpoint(name=f"chk_{lender_id}_{table_name}", validation_definitions=[val_def], result_format={"result_format": "COMPLETE"})
-                )
-                
-                result = checkpoint.run()
+                    # Also keep it wrapped for the checkpoint run just in case
+                    val_def = context.validation_definitions.add(
+                        gx.ValidationDefinition(data=batch_def, suite=suite, name=f"val_{lender_id}_{table_name}")
+                    )
+                    
+                    checkpoint = context.checkpoints.add(
+                        gx.Checkpoint(name=f"chk_{lender_id}_{table_name}", validation_definitions=[val_def], result_format={"result_format": "COMPLETE"})
+                    )
+                    
+                    result = checkpoint.run()
+
                 df = self._parse_results(lender_id, result)
-                
                 if not df.empty:
                     df['table'] = table_name
-                
                 all_results.append(df)
 
             if all_results:
@@ -115,7 +119,6 @@ class GXRunner:
     def _parse_results(self, lender_id, checkpoint_result):
         parsed_rows = []
         
-        # Handle GX result unwrapping
         run_result = list(checkpoint_result.run_results.values())[0]
         if isinstance(run_result, dict) and 'validation_result' in run_result:
             validation_result = run_result['validation_result']
@@ -129,12 +132,9 @@ class GXRunner:
             exp_config = res.expectation_config
             meta = exp_config.meta or {}
             
-            # 2. EXTRACT NAME
-            # Check for our custom alias first
             if 'test_alias' in meta and meta['test_alias']:
                 display_name = meta['test_alias']
             else:
-                # Fallback to type if name is missing
                 if exp_config.type == "unexpected_rows_expectation":
                     display_name = "Custom SQL Check"
                 else:
@@ -145,7 +145,7 @@ class GXRunner:
             
             parsed_rows.append({
                 "lender": lender_id,
-                "test_name": display_name,  # Now uses the friendly name from YAML
+                "test_name": display_name,
                 "status": status,
                 "failed_rows": unexpected_count,
                 "severity": severity,
