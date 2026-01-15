@@ -72,18 +72,14 @@ if run_btn:
     final_df = pd.DataFrame()
 
     # 2. EXECUTION LOGIC (Sequential)
-    # Simple Loop - Easy to read, Easy to debug
     if selected_lender == "ALL":
         all_dfs = []
         progress_bar = st.progress(0)
         
         for i, lender in enumerate(lenders):
-            # We use st.spinner inside the loop so the user knows exactly what's happening
             with st.spinner(f"Analyzing {lender} ({i+1}/{len(lenders)})..."):
                 df = runner.run_validation(lender, specific_table=table_arg)
                 all_dfs.append(df)
-            
-            # Update progress bar
             progress_bar.progress((i + 1) / len(lenders))
         
         if all_dfs:
@@ -96,8 +92,8 @@ if run_btn:
 
     # 3. DISPLAY RESULTS
     if not final_df.empty:
-        # Reorder columns for readability
-        cols = ['lender', 'table', 'test_name', 'failed_rows', 'status', 'severity']
+        # Reorder columns: Status first, then Names, then Numbers
+        cols = ['status', 'lender', 'table', 'test_name', 'failed_rows', 'total_rows', 'severity']
         existing_cols = [c for c in cols if c in final_df.columns]
         final_df = final_df[existing_cols]
 
@@ -105,7 +101,15 @@ if run_btn:
             color = 'red' if val != 'PASS' else 'green'
             return f'color: {color}; font-weight: bold'
 
-        st.dataframe(final_df.style.applymap(color_status, subset=['status']), use_container_width=True)
+        # Use column_config to force Number format (remove decimals)
+        st.dataframe(
+            final_df.style.applymap(color_status, subset=['status']), 
+            use_container_width=True,
+            column_config={
+                "failed_rows": st.column_config.NumberColumn(format="%d"),
+                "total_rows": st.column_config.NumberColumn(format="%d")
+            }
+        )
         
         fails = final_df[final_df['status'] != 'PASS']
         if not fails.empty:
