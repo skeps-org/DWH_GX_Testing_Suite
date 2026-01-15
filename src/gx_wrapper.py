@@ -44,6 +44,7 @@ class GXRunner:
                 target_tables = list(self.rules['tables'].keys())
             
             for table_name in target_tables:
+                logger.info(f"[{lender_id}] Starting validation for table: {table_name}")
                 asset_name = f"asset_{lender_id}_{table_name}"
                 try:
                     data_asset = data_source.get_asset(asset_name)
@@ -58,11 +59,7 @@ class GXRunner:
                 
                 from great_expectations import expectations as gxe
                 
-                # -----------------------------------------------------------------
-                # THE FIX: Wrap the CREATION of expectations, not just execution
-                # -----------------------------------------------------------------
                 with warnings.catch_warnings():
-                    # Catch the warning where it actually happens: during __init__
                     warnings.filterwarnings("ignore", message=".*unexpected_rows_query should contain the {batch} parameter.*")
                     
                     for exp_config in table_rules:
@@ -70,7 +67,6 @@ class GXRunner:
                         meta_data['test_alias'] = exp_config.get('name') 
 
                         if exp_config['type'] == "unexpected_rows_expectation":
-                            # WARNING TRIGGERS HERE ->
                             exp_instance = gxe.UnexpectedRowsExpectation(**exp_config['kwargs'])
                             exp_instance.meta = meta_data
                             suite.add_expectation(exp_instance)
@@ -84,7 +80,6 @@ class GXRunner:
                             else:
                                 logger.warning(f"Expectation {camel_name} not found.")
 
-                    # Also keep it wrapped for the checkpoint run just in case
                     val_def = context.validation_definitions.add(
                         gx.ValidationDefinition(data=batch_def, suite=suite, name=f"val_{lender_id}_{table_name}")
                     )
@@ -95,9 +90,8 @@ class GXRunner:
                     
                     result = checkpoint.run()
 
-                df = self._parse_results(lender_id, result)
-                if not df.empty:
-                    df['table'] = table_name
+                # Pass table_name to parse_results for better logging context
+                df = self._parse_results(lender_id, result, table_name)
                 all_results.append(df)
 
             if all_results:
@@ -113,10 +107,11 @@ class GXRunner:
                 "test_name": "GX_Execution",
                 "error_msg": str(e),
                 "severity": "critical",
-                "failed_rows": 0
+                "failed_rows": 0,
+                "total_rows": 0
             }])
 
-    def _parse_results(self, lender_id, checkpoint_result):
+    def _parse_results(self, lender_id, checkpoint_result, table_name):
         parsed_rows = []
         
         run_result = list(checkpoint_result.run_results.values())[0]
@@ -141,15 +136,31 @@ class GXRunner:
                     display_name = exp_config.type
 
             severity = meta.get('severity', 'warning')
-            unexpected_count = res.result.get('unexpected_count', 0)
+            
+            # --- NEW: Extract Integers ---
+            unexpected_count = int(res.result.get('unexpected_count', 0))
+            element_count = int(res.result.get('element_count', 0))
+            
+            # --- NEW: Detailed Logging ---
+            log_message = (
+                f"[{lender_id}] [{table_name}] Test: {display_name} | "
+                f"Status: {status} | Failures: {unexpected_count}/{element_count}"
+            )
+            
+            if status == "FAIL":
+                logger.warning(log_message)
+            else:
+                logger.info(log_message)
             
             parsed_rows.append({
                 "lender": lender_id,
+                "table": table_name,
                 "test_name": display_name,
                 "status": status,
                 "failed_rows": unexpected_count,
+                "total_rows": element_count,
                 "severity": severity,
-                "error_msg": "" if success else f"Found {unexpected_count} unexpected values"
+                "error_msg": "" if success else f"Found {unexpected_count} failures"
             })
             
         return pd.DataFrame(parsed_rows)
