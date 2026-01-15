@@ -39,7 +39,7 @@ tables:
     - name: "check_positive_amount"
       type: "expect_column_values_to_be_between"
       kwargs:
-        column: "sanctioned_amount"
+        column: "amount"
         min_value: 1  # Effectively > 0
         max_value: 999999999
       meta:
@@ -50,7 +50,7 @@ tables:
       kwargs:
         unexpected_rows_query: |
           SELECT loan_id, term_value
-          FROM loan_details
+          FROM v73__loan_details
           WHERE term_value < 12 OR term_value > 300;
       meta:
         severity: "critical"
