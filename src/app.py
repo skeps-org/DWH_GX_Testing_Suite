@@ -44,7 +44,7 @@ run_btn = st.sidebar.button("Run Diagnostics", type="primary")
 # ---------------------------------------------------------
 @st.cache_resource
 def get_runner():
-    from gx_wrapper_backup import GXRunner 
+    from gx_wrapper import GXRunner 
     return GXRunner(secrets_path="secrets.toml", rules_path="config/gx_rules.yaml")
 
 if run_btn:
