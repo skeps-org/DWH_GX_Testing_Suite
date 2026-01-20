@@ -28,9 +28,13 @@ tables:
   # ----------------------------------------
   v73__loan_details:
     - name: "check_loan_id_unique"
-      type: "expect_column_values_to_be_unique"
+      type: "unexpected_rows_expectation"
       kwargs:
-        column: "loan_id"
+        unexpected_rows_query: |
+          SELECT loan_id, COUNT(*) AS cnt
+          FROM v73__loan_details
+          GROUP BY loan_id
+          HAVING COUNT(*) > 1;
       meta:
         severity: "critical"
 

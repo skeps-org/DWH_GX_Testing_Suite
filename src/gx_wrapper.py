@@ -104,7 +104,7 @@ class GXRunner:
                     result = checkpoint.run()
 
                 # Pass table_name to parse_results for better logging context
-                df = self._parse_results(lender_id, result, table_name)
+                df = self._parse_results(lender_id, result, table_name, creds)
                 all_results.append(df)
 
             if all_results:
