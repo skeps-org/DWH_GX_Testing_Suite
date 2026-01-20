@@ -87,7 +87,7 @@ if run_btn:
             return f'color: {color}; font-weight: bold'
 
         st.dataframe(
-            final_df.style.applymap(color_status, subset=['status']), 
+            final_df.style.map(color_status, subset=['status']), 
             use_container_width=True,
             column_config={
                 "failed_rows": st.column_config.NumberColumn(format="%d"),
