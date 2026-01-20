@@ -150,18 +150,32 @@ class GXRunner:
         cached_table_count = None
         
         for res in validation_result.results:
-            success = res.success
-            unexpected_count = int(res.result.get('unexpected_count', 0))
-            raw_element_count = int(res.result.get('element_count', 0))
+            exp_config = res.expectation_config
+            meta = exp_config.meta or {}
 
-            if raw_element_count == 0:
+            if exp_config.type == "unexpected_rows_expectation":
+                # SQL-based expectation
+                unexpected_rows = res.result.get("unexpected_rows", [])
+                unexpected_count = len(unexpected_rows)
+
                 if cached_table_count is None:
                     cached_table_count = self._get_table_count(creds, table_name)
-                element_count = cached_table_count
-            else:
-                element_count = raw_element_count
 
-            if success:
+                element_count = cached_table_count
+
+            else:
+                # Metric-based expectation
+                unexpected_count = int(res.result.get("unexpected_count", 0))
+                raw_element_count = int(res.result.get("element_count", 0))
+
+                if raw_element_count == 0:
+                    if cached_table_count is None:
+                        cached_table_count = self._get_table_count(creds, table_name)
+                    element_count = cached_table_count
+                else:
+                    element_count = raw_element_count
+
+            if res.success:
                 status = "PASS"
                 error_msg = ""
             elif unexpected_count > 0:
@@ -175,10 +189,7 @@ class GXRunner:
                 else:
                     error_msg = "Unknown execution error (Check logs)"
             
-            exp_config = res.expectation_config
-            meta = exp_config.meta or {}
-            
-            if 'test_alias' in meta and meta['test_alias']:
+            if meta.get('test_alias'):
                 display_name = meta['test_alias']
             else:
                 if exp_config.type == "unexpected_rows_expectation":
@@ -187,11 +198,6 @@ class GXRunner:
                     display_name = exp_config.type
 
             severity = meta.get('severity', 'warning')
-
-            
-            # --- NEW: Extract Integers ---
-            unexpected_count = int(res.result.get('unexpected_count', 0))
-            element_count = int(res.result.get('element_count', 0))
             
             # --- NEW: Detailed Logging ---
             log_msg = f"[{lender_id}] [{table_name}] Test: {display_name} | Status: {status}"
