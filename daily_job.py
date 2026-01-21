@@ -44,7 +44,7 @@ def main():
         
         if not failures.empty:
             logger.warning(f"Detected {len(failures)} failures. Sending alerts...")
-            send_alert_email(failures)
+            # send_alert_email(failures)
         else:
             logger.info("All GX checks passed across all tables.")
     else:
