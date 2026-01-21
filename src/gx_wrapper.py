@@ -7,6 +7,7 @@ import logging.config
 import os
 import warnings
 import sqlalchemy
+import datetime
 
 # Ensure logs dir exists
 if not os.path.exists('logs'):
@@ -34,8 +35,10 @@ class GXRunner:
                 return int(result)
         except Exception as e:
             logger.warning(f"Could not fetch row count for {table_name}: {e}")
+            logger.warning(f"Could not fetch row count for {table_name}: {e}")
             return 0 
     
+
     def run_validation(self, lender_id, specific_table=None):
         logger.info(f"Initializing GX for {lender_id}...")
         all_results = []
@@ -68,8 +71,25 @@ class GXRunner:
                 suite_name = f"suite_{lender_id}_{table_name}"
                 suite = context.suites.add(gx.ExpectationSuite(name=suite_name))
                 
-                table_rules = self.rules['tables'][table_name]
+                table_config = self.rules['tables'][table_name]
                 
+                # Strict enforcement: Config MUST be a dictionary with 'primary_key'
+                if not isinstance(table_config, dict):
+                    logger.error(f"Invalid configuration for table {table_name}. Must be a dictionary with 'primary_key'.")
+                    continue
+                    
+                table_rules = table_config.get('expectations', [])
+                pk_config = table_config.get('primary_key')
+                
+                if not pk_config:
+                    logger.error(f"Table {table_name} missing 'primary_key' configuration.")
+                    continue
+                    
+                if isinstance(pk_config, list):
+                    primary_keys = pk_config
+                else:
+                    primary_keys = [pk_config]
+
                 from great_expectations import expectations as gxe
                 
                 with warnings.catch_warnings():
@@ -78,6 +98,9 @@ class GXRunner:
                     for exp_config in table_rules:
                         meta_data = exp_config.get('meta', {})
                         meta_data['test_alias'] = exp_config.get('name') 
+                        
+                        # Store PK config for CSV generation
+                        meta_data['primary_keys'] = primary_keys
 
                         if exp_config['type'] == "unexpected_rows_expectation":
                             exp_instance = gxe.UnexpectedRowsExpectation(**exp_config['kwargs'])
@@ -98,7 +121,14 @@ class GXRunner:
                     )
                     
                     checkpoint = context.checkpoints.add(
-                        gx.Checkpoint(name=f"chk_{lender_id}_{table_name}", validation_definitions=[val_def], result_format={"result_format": "COMPLETE"})
+                        gx.Checkpoint(
+                            name=f"chk_{lender_id}_{table_name}", 
+                            validation_definitions=[val_def], 
+                            result_format={
+                                "result_format": "COMPLETE",
+                                "unexpected_index_column_names": primary_keys
+                            }
+                        )
                     )
                     
                     result = checkpoint.run()
@@ -155,7 +185,10 @@ class GXRunner:
 
             if exp_config.type == "unexpected_rows_expectation":
                 # SQL-based expectation
-                unexpected_rows = res.result.get("unexpected_rows", [])
+                unexpected_rows = res.result.get("unexpected_rows")
+                if unexpected_rows is None:
+                    unexpected_rows = res.result.get("details", {}).get("unexpected_rows", [])
+                
                 unexpected_count = len(unexpected_rows)
 
                 if cached_table_count is None:
@@ -187,6 +220,7 @@ class GXRunner:
                 if raw_msg:
                     error_msg = str(raw_msg)[:2000]
                 else:
+                    logger.error(f"Failed to extract error message. Raw info: {res.exception_info}")
                     error_msg = "Unknown execution error (Check logs)"
             
             if meta.get('test_alias'):
@@ -217,4 +251,102 @@ class GXRunner:
                 "error_msg": error_msg
             })
             
+            # --- New: CSV Generation ---
+            if status == "FAIL":
+                self._generate_failure_csv(lender_id, table_name, display_name, res)
+
         return pd.DataFrame(parsed_rows)
+
+    def _generate_failure_csv(self, lender_id, table_name, test_name, result_obj):
+        """
+        Generates a CSV file for failed tests.
+        Filename format: lender_table_test_name_testruntime.csv
+        Content: lender_name, table_name, test_name, [pk_cols...], expected_value, actual_value
+        """
+        try:
+            # Create directory if not exists
+            output_dir = "failed_rows"
+            if not os.path.exists(output_dir):
+                os.makedirs(output_dir)
+
+            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+            # Sanitize filename components
+            safe_test_name = "".join([c if c.isalnum() else "_" for c in test_name])
+            filename = f"{lender_id}_{table_name}_{safe_test_name}_{timestamp}.csv"
+            filepath = os.path.join(output_dir, filename)
+
+            rows_to_save = []
+            
+            # Extract failed data
+            unexpected_list = result_obj.result.get("unexpected_list", [])
+            unexpected_rows = result_obj.result.get("unexpected_rows")
+            if unexpected_rows is None:
+                unexpected_rows = result_obj.result.get("details", {}).get("unexpected_rows", [])
+            
+            # Retrieve configured PKs from meta
+            meta = result_obj.expectation_config.meta or {}
+            primary_keys = meta.get('primary_keys', [])
+            description = meta.get('description', 'Pass Expectation')
+
+            
+            
+            def _build_row(item):
+                row = {
+                    "lender_name": lender_id,
+                    "table_name": table_name,
+                    "test_name": test_name
+                }
+                
+                # Dynamic PK columns
+                if isinstance(item, dict):
+                    for pk in primary_keys:
+                        val = item.get(pk)
+                        row[pk] = str(val) if val is not None else "N/A"
+                else:
+                    # Fallback for non-dict items (unlikely with valid config)
+                    row["raw_item"] = str(item)
+                
+                row["expected_value"] = description if description != 'Pass Expectation' else "0 rows returned" if unexpected_rows else description
+                
+                # Refine actual_value
+                if isinstance(item, dict):
+                    # Filter out PKs to find the "actual value" content
+                    actual_content = {k: v for k, v in item.items() if k not in primary_keys}
+                    
+                    if len(actual_content) == 1:
+                        # If only one value column remains, use that value directly
+                        row["actual_value"] = str(list(actual_content.values())[0])
+                    else:
+                        # Otherwise dump the remaining content
+                        row["actual_value"] = str(actual_content)
+                else:
+                    row["actual_value"] = str(item)
+                
+                return row
+
+            if unexpected_list:
+                for item in unexpected_list:
+                    rows_to_save.append(_build_row(item))
+            elif unexpected_rows:
+                for item in unexpected_rows:
+                    rows_to_save.append(_build_row(item))
+
+            if rows_to_save:
+                df_fail = pd.DataFrame(rows_to_save)
+                
+                # Define column order: Context -> PKs -> Expected -> Actual
+                cols = ["lender_name", "table_name", "test_name"] + primary_keys + ["expected_value", "actual_value"]
+                
+                # Ensure all columns exist (handling potential messy data)
+                for c in cols:
+                    if c not in df_fail.columns:
+                        df_fail[c] = "N/A"
+                
+                # Select only relevant columns
+                df_fail = df_fail[cols]
+                
+                df_fail.to_csv(filepath, index=False)
+                logger.info(f"Generated failure report: {filepath}")
+        
+        except Exception as e:
+            logger.error(f"Failed to generate CSV for {test_name}: {e}")

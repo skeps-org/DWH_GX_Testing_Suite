@@ -2,3 +2,5 @@ secrets.toml
 myvenv/
 dq_system.log
 .DS_Store
+tests/test_csv_generation.py
+failed_rows/*
