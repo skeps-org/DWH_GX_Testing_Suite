@@ -5,3 +5,4 @@ pandas
 toml
 pyyaml
 streamlit
+schedule
