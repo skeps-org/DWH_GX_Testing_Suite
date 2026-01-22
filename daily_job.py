@@ -1,5 +1,4 @@
 from src.gx_wrapper import GXRunner
-from src.notifier import send_alert_email
 import concurrent.futures
 import pandas as pd
 import logging
@@ -43,8 +42,7 @@ def main():
         failures = final_df[final_df['status'] != 'PASS']
         
         if not failures.empty:
-            logger.warning(f"Detected {len(failures)} failures. Sending alerts...")
-            # send_alert_email(failures)
+            logger.warning(f"Detected {len(failures)} failures. Check 'failed_rows/' directory for CSV reports.")
         else:
             logger.info("All GX checks passed across all tables.")
     else:
