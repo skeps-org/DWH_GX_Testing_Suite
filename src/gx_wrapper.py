@@ -35,7 +35,6 @@ class GXRunner:
                 return int(result)
         except Exception as e:
             logger.warning(f"Could not fetch row count for {table_name}: {e}")
-            logger.warning(f"Could not fetch row count for {table_name}: {e}")
             return 0 
     
 
@@ -126,7 +125,8 @@ class GXRunner:
                             validation_definitions=[val_def], 
                             result_format={
                                 "result_format": "COMPLETE",
-                                "unexpected_index_column_names": primary_keys
+                                "unexpected_index_column_names": primary_keys,
+                                "partial_unexpected_count": 5000
                             }
                         )
                     )
@@ -134,6 +134,7 @@ class GXRunner:
                     result = checkpoint.run()
 
                 # Pass table_name to parse_results for better logging context
+                # Pass creds so we can re-run queries if needed
                 df = self._parse_results(lender_id, result, table_name, creds)
                 all_results.append(df)
 
@@ -191,6 +192,10 @@ class GXRunner:
                 
                 unexpected_count = len(unexpected_rows)
 
+                # DEBUG: Use metrics count if available
+                if "unexpected_count" in res.result:
+                    unexpected_count = int(res.result["unexpected_count"])
+                
                 if cached_table_count is None:
                     cached_table_count = self._get_table_count(creds, table_name)
 
@@ -213,7 +218,10 @@ class GXRunner:
                 error_msg = ""
             elif unexpected_count > 0:
                 status = "FAIL"
-                error_msg = f"Found {unexpected_count} data failures"
+                if unexpected_count == 200:
+                    error_msg = f"Found at least {unexpected_count} data failures (Display limit). Check CSV for full details."
+                else:
+                    error_msg = f"Found {unexpected_count} data failures"
             else:
                 status = "ERROR"
                 raw_msg = self._extract_error_message(res.exception_info)
@@ -233,7 +241,7 @@ class GXRunner:
 
             severity = meta.get('severity', 'warning')
             
-            # --- NEW: Detailed Logging ---
+            # --- Detailed Logging ---
             log_msg = f"[{lender_id}] [{table_name}] Test: {display_name} | Status: {status}"
             if status in ["FAIL", "ERROR"]:
                 logger.warning(f"{log_msg} - {error_msg}")
@@ -251,13 +259,13 @@ class GXRunner:
                 "error_msg": error_msg
             })
             
-            # --- New: CSV Generation ---
+            # --- CSV Generation (Modified to allow re-running query) ---
             if status == "FAIL":
-                self._generate_failure_csv(lender_id, table_name, display_name, res)
+                self._generate_failure_csv(lender_id, table_name, display_name, res, creds)
 
         return pd.DataFrame(parsed_rows)
 
-    def _generate_failure_csv(self, lender_id, table_name, test_name, result_obj):
+    def _generate_failure_csv(self, lender_id, table_name, test_name, result_obj, creds):
         """
         Generates a CSV file for failed tests.
         Filename format: lender_table_test_name_testruntime.csv
@@ -277,19 +285,47 @@ class GXRunner:
 
             rows_to_save = []
             
-            # Extract failed data
-            unexpected_list = result_obj.result.get("unexpected_list", [])
-            unexpected_rows = result_obj.result.get("unexpected_rows")
-            if unexpected_rows is None:
-                unexpected_rows = result_obj.result.get("details", {}).get("unexpected_rows", [])
-            
             # Retrieve configured PKs from meta
             meta = result_obj.expectation_config.meta or {}
             primary_keys = meta.get('primary_keys', [])
             description = meta.get('description', 'Pass Expectation')
+            
+            # CHECK: If this is a SQL expectation, bypass GX limits and run query directly
+            exp_config = result_obj.expectation_config
+            if exp_config.type == "unexpected_rows_expectation" and "unexpected_rows_query" in exp_config.kwargs.get('kwargs', exp_config.kwargs):
+                # exp_config.kwargs sometimes is wrapped or not depending on object type? 
+                # result_obj.expectation_config is usually an ExpectationConfiguration object.
+                # Accessing .kwargs is fine.
+                
+                query = exp_config.kwargs.get("unexpected_rows_query")
+                logger.info(f"Downloading full failed rows directly from DB for {test_name}...")
+                
+                try:
+                    conn_str = self._build_connection_string(creds)
+                    # Use pandas to read sql
+                    df_fail_direct = pd.read_sql(query, conn_str)
+                    unexpected_items = df_fail_direct.to_dict(orient='records')
+                except Exception as db_err:
+                    logger.error(f"Direct DB fetch failed: {db_err}. Falling back to GX results.")
+                    # Fallback to GX results
+                    unexpected_list = result_obj.result.get("unexpected_list", [])
+                    unexpected_rows = result_obj.result.get("unexpected_rows")
+                    if unexpected_rows is None:
+                        unexpected_rows = result_obj.result.get("details", {}).get("unexpected_rows", [])
+                    unexpected_items = unexpected_list or unexpected_rows or []
 
-            
-            
+            else:
+                # Default GX behavior
+                unexpected_list = result_obj.result.get("unexpected_list", [])
+                unexpected_rows = result_obj.result.get("unexpected_rows")
+                if unexpected_rows is None:
+                    unexpected_rows = result_obj.result.get("details", {}).get("unexpected_rows", [])
+                
+                if unexpected_list:
+                    unexpected_items = unexpected_list
+                else:
+                    unexpected_items = unexpected_rows or []
+
             def _build_row(item):
                 row = {
                     "lender_name": lender_id,
@@ -303,10 +339,9 @@ class GXRunner:
                         val = item.get(pk)
                         row[pk] = str(val) if val is not None else "N/A"
                 else:
-                    # Fallback for non-dict items (unlikely with valid config)
                     row["raw_item"] = str(item)
                 
-                row["expected_value"] = description if description != 'Pass Expectation' else "0 rows returned" if unexpected_rows else description
+                row["expected_value"] = description if description != 'Pass Expectation' else "0 rows returned"
                 
                 # Refine actual_value
                 if isinstance(item, dict):
@@ -314,22 +349,16 @@ class GXRunner:
                     actual_content = {k: v for k, v in item.items() if k not in primary_keys}
                     
                     if len(actual_content) == 1:
-                        # If only one value column remains, use that value directly
                         row["actual_value"] = str(list(actual_content.values())[0])
                     else:
-                        # Otherwise dump the remaining content
                         row["actual_value"] = str(actual_content)
                 else:
                     row["actual_value"] = str(item)
                 
                 return row
 
-            if unexpected_list:
-                for item in unexpected_list:
-                    rows_to_save.append(_build_row(item))
-            elif unexpected_rows:
-                for item in unexpected_rows:
-                    rows_to_save.append(_build_row(item))
+            for item in unexpected_items:
+                rows_to_save.append(_build_row(item))
 
             if rows_to_save:
                 df_fail = pd.DataFrame(rows_to_save)
@@ -337,7 +366,7 @@ class GXRunner:
                 # Define column order: Context -> PKs -> Expected -> Actual
                 cols = ["lender_name", "table_name", "test_name"] + primary_keys + ["expected_value", "actual_value"]
                 
-                # Ensure all columns exist (handling potential messy data)
+                # Ensure all columns exist
                 for c in cols:
                     if c not in df_fail.columns:
                         df_fail[c] = "N/A"

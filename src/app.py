@@ -111,6 +111,8 @@ if run_btn:
                         st.code(row['error_msg'], language="sql")
                     else:
                         st.info(f"Failed Rows: {row['failed_rows']} / {row['total_rows']}")
+                        if row['error_msg']:
+                            st.error(row['error_msg'])
         else:
             st.success("✅ All systems green.")
     else:
