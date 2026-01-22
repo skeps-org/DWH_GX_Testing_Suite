@@ -8,6 +8,7 @@ import os
 import warnings
 import sqlalchemy
 import datetime
+from urllib.parse import quote_plus
 
 # Ensure logs dir exists
 if not os.path.exists('logs'):
@@ -23,7 +24,9 @@ class GXRunner:
             self.rules = yaml.safe_load(f)
 
     def _build_connection_string(self, creds):
-        return f"mysql+mysqlconnector://{creds['user']}:{creds['password']}@{creds['host']}:{creds.get('port', 3306)}/{creds['db']}"
+        safe_user = quote_plus(creds['user'])
+        safe_password = quote_plus(creds['password'])
+        return f"mysql+mysqlconnector://{safe_user}:{safe_password}@{creds['host']}:{creds.get('port', 3306)}/{creds['db']}"
 
     def _get_table_count(self, creds, table_name):
         try:
