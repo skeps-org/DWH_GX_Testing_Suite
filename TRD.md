@@ -25,16 +25,15 @@ The system utilizes a **Hub-and-Spoke** architecture. A central Python engine (T
 This class encapsulates the Great Expectations complexity.
 * **Method `run_validation(lender_id)`**:
     1.  Creates an **Ephemeral Data Context**.
-    2.  Builds a dynamic connection string for the requested `lender_id`.
+    2.  Builds a dynamic connection string (URL-encoding credentials to handle special characters like `@`).
     3.  Translates `gx_rules.yaml` into a GX `ExpectationSuite`.
     4.  Executes a Checkpoint against the database.
-    5.  Parses the complex GX Result Object into a flat Pandas DataFrame.
+    5.  **Robust Fallback**: If a SQL test fails, the engine re-executes the raw SQL query via Pandas to bypass GX's internal row limit (200), ensuring the generated CSV contains ALL failed rows.
+    6.  Parses the complex GX Result Object into a flat Pandas DataFrame.
 
 #### 2.3 Notification System (`src/notifier.py`)
 * Accepts a DataFrame of failed tests.
 * Generates an HTML body with a CSS-styled table.
-* Sends via SMTP (Office365/Gmail/SendGrid).
-* **Logic:** If `DataFrame.empty` is True, no email is sent.
 
 ### 3. Application Flow Diagram
 
@@ -44,9 +43,9 @@ This class encapsulates the Great Expectations complexity.
 3.  **Fan-Out:** Script spawns Worker Threads.
 4.  **Execute:** Each thread claims a Lender, connects to MySQL, runs SQL checks.
 5.  **Fan-In:** Results from all threads are merged into a Master DataFrame.
-6.  **Decision:**
+6.  **Outcome:**
     * If `Failures == 0`: Log "Success" and exit.
-    * If `Failures > 0`: Call `notifier.send_alert_email()` -> Exit.
+    * If `Failures > 0`: Failure CSVs are automatically generated in `failed_rows/` during execution. Log failure count to `dq_system.log`.
 
 #### 3.2 Manual User Flow (UI)
 1.  **Trigger:** User opens Streamlit App in browser.
@@ -65,7 +64,13 @@ The system standardizes results into a flat format for easy reporting:
 | `status` | String | "PASS", "FAIL", or "CRITICAL_ERROR" |
 | `failed_rows` | Integer | Count of rows violating the rule |
 | `severity` | String | "critical" or "warning" (defined in YAML) |
-| `error_msg` | String | Stack trace if status is ERROR |
+| `error_msg` | String | Stack trace or "At least 200 failures..." warning if display limit reached |
+
+#### 5.1 Failure Artifacts
+For every failed test, a CSV is generated in `failed_rows/` with the format:
+`lender_table_testname_timestamp.csv`
+* **Columns:** `lender`, `table`, `test`, `[primary_keys]`, `expected_value`, `actual_value`
+* **Completeness:** Contains 100% of failed rows, sourced directly from the DB if necessary.
 
 ### 5. Deployment Structure
 The application requires the following directory structure on the Windows Application Server:

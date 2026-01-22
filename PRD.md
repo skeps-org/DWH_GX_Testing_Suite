@@ -23,6 +23,7 @@ We are building a production-grade Data Quality (DQ) framework to validate data 
 | **FR-04** | **Manual UI Trigger** | A simple Dashboard (Streamlit) must allow users to trigger validations for a specific lender on demand.
 | **FR-05** | **Alerting** | Critical failures must trigger an email to `data.engineering` and `analytics` teams with a summary report.
 | **FR-06** | **Parallel Execution** | Tests should run concurrently to ensure the daily job finishes within the maintenance window.
+| **FR-07** | **Detailed Reporting** | System must generate a downloadable CSV containing ALL failed rows (bypassing any display limits) for root cause analysis.
 
 ### 5. Non-Functional Requirements (NFR)
 * **Scalability:** Must handle more lenders without code refactoring.
