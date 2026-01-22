@@ -7,25 +7,30 @@ import logging.config
 logging.config.fileConfig('config/logging.conf')
 logger = logging.getLogger('dq_engine')
 
-def run_wrapper(runner, lender):
+def run_wrapper(lender):
     # UPDATE: No longer passing specific table_name. 
     # This tells the runner to look at 'tables' in YAML and run ALL of them.
+    # Instantiate locally to avoid PicklingError with ProcessPoolExecutor
+    runner = GXRunner()
     return runner.run_validation(lender)
 
 def main():
     logger.info("=== Starting GX Daily Check (Multi-Table) ===")
     
     try:
-        runner = GXRunner()
-        lenders = list(runner.secrets.keys())
+        # We still need a temporary runner just to get the list of lenders
+        temp_runner = GXRunner()
+        lenders = list(temp_runner.secrets.keys())
     except Exception as e:
         logger.critical(f"Config Error: {e}")
         return
 
     all_results = []
     # 5 Workers is safe for GX memory usage
-    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
-        future_to_lender = {executor.submit(run_wrapper, runner, l): l for l in lenders}
+    # UPDATE: Switched to ProcessPoolExecutor because GX Context is not thread-safe.
+    # This fixes "Could not find datasource" errors by giving each job its own memory space.
+    with concurrent.futures.ProcessPoolExecutor(max_workers=5) as executor:
+        future_to_lender = {executor.submit(run_wrapper, l): l for l in lenders}
         
         for future in concurrent.futures.as_completed(future_to_lender):
             lender = future_to_lender[future]
