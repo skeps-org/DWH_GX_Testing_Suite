@@ -42,7 +42,7 @@ tables:
                OR (ind_manual_review = 1 AND app_auto_decision IN ('APPROVED', 'DECLINED'));
         meta:
           severity: "warning"
-          description: "Auto decision must be SOFT_PENDING if manual review, else APPROVED/DECLINED":  
+          description: "Auto decision must be SOFT_PENDING if manual review, else APPROVED/DECLINED"  
 
       # Check 5, 7: Max Loan Amount consistency
       - name: "check_max_loan_amounts_consistency"
