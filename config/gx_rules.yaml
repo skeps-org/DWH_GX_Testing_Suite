@@ -32,6 +32,170 @@ tables:
           severity: "warning"
           description: "Application Auto Decision must be in set [APPROVED, DECLINED, SOFT_PENDING, ERROR]"
 
+      # Check 3: Auto Decision Logic based on Manual Review
+      - name: "check_auto_decision_logic"
+        type: "unexpected_rows_expectation"
+        kwargs:
+          unexpected_rows_query: |
+            SELECT application_id FROM v73__application_to_lender
+            WHERE ((ind_manual_review IS NULL OR ind_manual_review = 0) AND app_auto_decision = 'SOFT_PENDING')
+               OR (ind_manual_review = 1 AND app_auto_decision IN ('APPROVED', 'DECLINED'));
+        meta:
+          severity: "warning"
+          description: "Auto decision must be SOFT_PENDING if manual review, else APPROVED/DECLINED":  
+
+      # Check 5, 7: Max Loan Amount consistency
+      - name: "check_max_loan_amounts_consistency"
+        type: "unexpected_rows_expectation"
+        kwargs:
+          unexpected_rows_query: |
+            SELECT application_id FROM v73__application_to_lender
+            WHERE max_loan_amt != LEAST(max_loan_amount_1_1, max_loan_amount_2_1, max_loan_amount_3_1, max_loan_amount_4_1)
+               OR intermediate_max_loan_amt != LEAST(max_loan_amount_1_1, max_loan_amount_2_1, max_loan_amount_3_1, max_loan_amount_4_1);
+        meta:
+          severity: "critical"
+          description: "Max loan amounts must equal the minimum of the four component amounts"
+
+      # Check 6
+      - name: "check_stated_income_max_loan_amt"
+        type: "unexpected_rows_expectation"
+        kwargs:
+          unexpected_rows_query: |
+            SELECT application_id
+            FROM v73__application_to_lender
+            WHERE
+              (
+                app_auto_decision IN ('SOFT_PENDING','APPROVED')
+                AND stated_income_max_loan_amt IS NULL
+              )
+              OR
+              stated_income_max_loan_amt != LEAST(
+                max_loan_amount_1_1,
+                max_loan_amount_2_1,
+                max_loan_amount_3_1,
+                max_loan_amount_4_1
+              );
+        meta:
+          severity: "critical"
+          description: "Stated income max loan amt must be valid"
+      
+      # Check 9
+      - name: "check_soft_pending_requires_manual_review"
+        type: "unexpected_rows_expectation"
+        kwargs:
+          unexpected_rows_query: |
+            SELECT application_id
+            FROM v73__application_to_lender
+            WHERE app_auto_decision = 'SOFT_PENDING'
+              AND ind_manual_review != 1;
+        meta:
+          severity: "critical"
+          description: "Soft pending cases must have manual review flag = 1"
+
+      # Check 10
+      - name: "check_pending_checks_not_null_for_soft_pending"
+        type: "unexpected_rows_expectation"
+        kwargs:
+          unexpected_rows_query: |
+            SELECT application_id
+            FROM v73__application_to_lender
+            WHERE app_auto_decision = 'SOFT_PENDING'
+              AND (pending_checks IS NULL OR pending_checks = '[]');
+        meta:
+          severity: "critical"
+          description: "Pending checks must exist for soft pending cases"
+      
+      # Check 11, 12: Income Verification
+      - name: "check_income_verification_details"
+        type: "unexpected_rows_expectation"
+        kwargs:
+          unexpected_rows_query: |
+            SELECT application_id FROM v73__application_to_lender
+            WHERE ind_income_verification = 1 AND (income_verification_method IS NULL OR verified_income IS NULL);
+        meta:
+          severity: "critical"
+          description: "Income verification method and verified income must exist if indicator is 1"
+
+      # Check 15, 16: Decline Reason Integrity
+      - name: "check_decline_reason_integrity"
+        type: "unexpected_rows_expectation"
+        kwargs:
+          unexpected_rows_query: |
+            SELECT application_id FROM v73__application_to_lender
+            WHERE ((latest_status = 'DECLINED' OR app_auto_decision = 'DECLINED' OR app_final_decision = 'DECLINED') AND lender_decline_reason IS NULL)
+               OR (lender_decline_reason IS NOT NULL AND lender_rejection_status IS NULL)
+               OR (lender_decline_reason IS NULL AND lender_rejection_status IS NOT NULL);
+        meta:
+          severity: "critical"
+          description: "Decline reason and rejection status must be present and synchronized for declined cases"
+          
+      # Check 19: Pre-funding debt calculation
+      - name: "check_pre_funding_debt_calculation"
+        type: "unexpected_rows_expectation"
+        kwargs:
+          unexpected_rows_query: |
+            SELECT application_id FROM v73__application_to_lender
+            WHERE pre_funding_debt != (monthly_debt_burden + COALESCE(other_monthly_debt_burden, 0));
+        meta:
+          severity: "critical"
+          description: "Pre-funding debt must be the sum of monthly and other monthly debt burdens"
+
+      # Check 20-23: Component Loan Amount Deltas
+      - name: "check_loan_amount_deltas"
+        type: "unexpected_rows_expectation"
+        kwargs:
+          unexpected_rows_query: |
+            SELECT application_id FROM v73__application_to_lender
+            WHERE (max_loan_amount_1_1 > max_loan_amount_1 OR max_loan_amount_1 - max_loan_amount_1_1 != pre_funding_debt + lender_adjustment_debt + active_contract_balance_merchant)
+               OR (max_loan_amount_2_1 > max_loan_amount_2 OR max_loan_amount_2 - max_loan_amount_2_1 != pre_funding_debt + lender_adjustment_debt + active_contract_balance_merchant);
+        meta:
+          severity: "critical"
+          description: "The difference between max_loan_amount and its sub-component must equal the debt sum"
+
+      # Check 8: Maximum Available Amount Logic
+      - name: "check_maximum_available_amt_vs_stated_income"
+        type: "unexpected_rows_expectation"
+        kwargs:
+          unexpected_rows_query: |
+            SELECT atl.application_id
+            FROM data_warehouse.v73__application_to_lender AS atl
+            LEFT JOIN data_warehouse.v69__application_details AS ad ON atl.application_id = ad.application_id
+            WHERE CASE 
+                WHEN stated_income_max_loan_amt > 50000 AND income_verification_method IS NULL THEN maximum_avl_amt != 50000
+                WHEN verified_income > original_total_monthly_income*12 OR stated_income_max_loan_amt < 50000 THEN maximum_avl_amt != stated_income_max_loan_amt
+                ELSE maximum_avl_amt != 50000 
+            END;
+        meta:
+          severity: "critical"
+          description: "Maximum available amount calculation issues"
+
+      # Check 18: FICO Score Match
+      - name: "check_fico_score_consistency"
+        type: "unexpected_rows_expectation"
+        kwargs:
+          unexpected_rows_query: |
+            SELECT atl.application_id
+            FROM data_warehouse.v73__application_to_lender AS atl
+            LEFT JOIN data_warehouse.v73__application_details AS ad ON atl.application_id = ad.application_id
+            LEFT JOIN data_warehouse.v73__bureau_details AS bd ON atl.application_id = bd.application_id AND ad.bor_customer_id = bd.customer_id
+            WHERE bor_fico != CAST(JSON_EXTRACT(bd.response_data, "$.fico") AS UNSIGNED);
+        meta:
+          severity: "critical"
+          description: "FICO score in application table must match bureau details JSON"
+
+      # Check 24: DTI Calculation
+      - name: "check_calculated_dti"
+        type: "unexpected_rows_expectation"
+        kwargs:
+          unexpected_rows_query: |
+            SELECT atl.application_id
+            FROM data_warehouse.v73__application_to_lender AS atl
+            LEFT JOIN data_warehouse.v73__application_details_v1 AS ad ON atl.application_id = ad.application_id
+            WHERE ABS(calculated_dti - (pre_funding_debt / ad.bor_monthly_income)) > 0.01;
+        meta:
+          severity: "critical"
+          description: "Calculated DTI must equal pre_funding_debt divided by monthly_income"
+
   # ----------------------------------------
   # TABLE 2: LOAN_DETAILS
   # ----------------------------------------
