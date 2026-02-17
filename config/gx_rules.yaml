@@ -276,22 +276,25 @@ tables:
         meta:
           severity: "critical"
           description: "Total funded amount must match the primary loan detail record and stay within contract limits."
-
+          
       # Check 10 & 11: Funding Timestamps vs Disbursement Records
       - name: "check_funding_timestamps_vs_disbursements"
         type: "unexpected_rows_expectation"
         kwargs:
           unexpected_rows_query: |
-            SELECT atf.application_id
-            FROM data_warehouse.v73__application_approval_to_funding AS atf
-            LEFT JOIN (
-                SELECT application_id, MIN(updated_at) AS fft, MAX(updated_at) AS lft
-                FROM data_warehouse.v69__pos_card_disbursement
-                GROUP BY application_id
-            ) AS pcd ON atf.application_id = pcd.application_id
-            WHERE atf.first_funding_timestamp != pcd.fft
-               OR atf.last_funding_timestamp != pcd.lft
-               OR (atf.total_funded_amt > 0 AND (atf.first_funding_timestamp IS NULL OR atf.last_funding_timestamp IS NULL))
+             SELECT atf.application_id
+              FROM v73__application_approval_to_funding AS atf
+              LEFT JOIN (
+                  SELECT application_id, MIN(pcd.updated_at) AS fft, MAX(pcd.updated_at) AS lft
+                  FROM v73__pos_card_disbursement AS pcd
+                  LEFT JOIN v73__pos_card_account AS pca
+                      ON pcd.account_id = pca.pos_card_account_id
+                  GROUP BY application_id
+              ) AS pcd
+                  ON atf.application_id = pcd.application_id
+              WHERE atf.first_funding_timestamp != pcd.fft
+                OR atf.last_funding_timestamp != pcd.lft
+                OR (total_funded_amt > 0 AND (first_funding_timestamp IS NULL OR last_funding_timestamp IS NULL));
         meta:
           severity: "warning"
           description: "Aggregated funding timestamps must match the individual disbursement transaction logs."
