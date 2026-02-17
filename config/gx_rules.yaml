@@ -362,3 +362,123 @@ tables:
         meta:
           severity: "critical"
           description: "Autopay method must be present when contract amount exists"
+
+  # ----------------------------------------
+  # TABLE 4: transaction_details 
+  # ----------------------------------------
+  v73__transaction_details:
+    primary_key: "order_id"
+    expectations:   
+      # Checks 1, 2, 4, 5, 6, 7, 8: Mandatory Column Validations
+      - name: "check_mandatory_transaction_columns"
+        type: "unexpected_rows_expectation"
+        kwargs:
+          unexpected_rows_query: |
+            SELECT order_id 
+            FROM v73__transaction_details 
+            WHERE order_id IS NULL 
+               OR flow_type IS NULL 
+               OR merchant_id IS NULL 
+               OR store_id IS NULL 
+               OR entry_point IS NULL 
+               OR transaction_timestamp IS NULL 
+               OR status IS NULL
+        meta:
+          severity: "critical"
+          description: "Core transactional identifiers and metadata must not be null."
+      
+      # Check 3: Application ID Logic
+      - name: "check_application_id_validity_on_status"
+        type: "unexpected_rows_expectation"
+        kwargs:
+          unexpected_rows_query: |
+            SELECT order_id 
+            FROM v73__transaction_details
+            WHERE application_id IS NULL
+              AND status IS NOT NULL
+              AND status NOT IN ('VERIFY', 'SSN_VERIFY', 'INITIATE_VERIFICATION')
+        meta:
+          severity: "critical"
+          description: "Application ID must be present for transactions beyond the initial verification stages."
+
+      # Check 9.1 & 9.2: Decline Alignment with Lender Table
+      - name: "check_transaction_decline_sync_with_lender"
+        type: "unexpected_rows_expectation"
+        kwargs:
+          unexpected_rows_query: |
+            SELECT td.transaction_id, td.application_id
+            FROM data_warehouse.v73__transaction_details AS td
+            INNER JOIN data_warehouse.v73__application_to_lender AS atl ON td.application_id = atl.application_id
+            WHERE (atl.app_final_decision = 'DECLINED' AND td.decline_reason_code IS NULL)
+               OR (atl.app_final_decision = 'DECLINED' AND (td.decline_reason_code != atl.lender_decline_reason OR td.rejection_status != atl.lender_rejection_status))
+        meta:
+          severity: "critical"
+          description: "Transaction decline codes must match the lender decision record for declined apps."
+
+      # Check 10: Decline Metadata Synchronization
+      - name: "check_decline_metadata_integrity"
+        type: "unexpected_rows_expectation"
+        kwargs:
+          unexpected_rows_query: |
+            SELECT order_id FROM v73__transaction_details
+            WHERE (decline_reason_code IS NOT NULL AND rejection_status IS NULL)
+               OR (decline_reason_code IS NULL AND rejection_status IS NOT NULL)
+        meta:
+          severity: "warning"
+          description: "Decline reason code and rejection status must be both present or both null."
+    
+      # Check 11: Counter Offer Logic
+      - name: "check_counter_offer_flagging"
+        type: "unexpected_rows_expectation"
+        kwargs:
+          unexpected_rows_query: |
+            SELECT td.transaction_id
+            FROM data_warehouse.v73__transaction_details AS td
+            INNER JOIN (
+                SELECT application_id, max_loan_amt
+                FROM data_warehouse.v73__application_to_lender
+                GROUP BY 1, 2
+            ) AS atl ON td.application_id = atl.application_id
+            WHERE td.request_amount > atl.max_loan_amt AND td.is_counter_offer != 1
+        meta:
+          severity: "warning"
+          description: "Transactions exceeding the max loan amount must be flagged as counter offers."
+
+      # Check 12 & 13: Autopay Setup Requirements
+      - name: "check_autopay_policy_compliance"
+        type: "unexpected_rows_expectation"
+        kwargs:
+          unexpected_rows_query: |
+            SELECT td.application_id
+            FROM data_warehouse.v73__transaction_details AS td
+            LEFT JOIN data_warehouse.v73__application_approval_to_funding AS atf ON td.application_id = atf.application_id
+            LEFT JOIN data_warehouse.v73__offer_details AS od ON td.application_id = od.application_id AND td.selected_offer_id = od.offer_id
+            WHERE atf.contract_amt > 0 AND (
+                (td.auto_pay_set = 1 AND td.autopay_method IS NULL)
+                OR (od.is_autopay_required = 1 AND td.auto_pay_set != 1)
+            )
+        meta:
+          severity: "critical"
+          description: "Autopay must be set when required by the offer and method must be present if flag is set."
+
+      # Check 14: Verification Payment Consistency
+      - name: "check_verification_payment_method"
+        type: "unexpected_rows_expectation"
+        kwargs:
+          unexpected_rows_query: |
+            SELECT transaction_id FROM v73__transaction_details
+            WHERE verification_payment_set = 1 AND verification_payment_method IS NULL
+        meta:
+          severity: "warning"
+          description: "Verification payment method is required when the verification flag is set."
+      
+      # Check 16: Ofee Payment Consistency
+      - name: "check_ofee_payment_method"
+        type: "unexpected_rows_expectation"
+        kwargs:
+          unexpected_rows_query: |
+            SELECT transaction_id FROM v73__transaction_details
+            WHERE ofee_payment_set = 1 AND ofee_payment_method IS NULL
+        meta:
+          severity: "warning"
+          description: "Ofee payment method is required when the ofee flag is set."
