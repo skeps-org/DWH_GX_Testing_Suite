@@ -197,48 +197,7 @@ tables:
           description: "Calculated DTI must equal pre_funding_debt divided by monthly_income"
 
   # ----------------------------------------
-  # TABLE 2: LOAN_DETAILS
-  # ----------------------------------------
-  v73__loan_details:
-    primary_key: "loan_id"
-    expectations:
-      - name: "check_loan_id_unique"
-        type: "unexpected_rows_expectation"
-        kwargs:
-          unexpected_rows_query: |
-            SELECT loan_id, COUNT(*) AS cnt
-            FROM v73__loan_details
-            GROUP BY loan_id
-            HAVING COUNT(*) > 1;
-        meta:
-          severity: "critical"
-          description: "Loan ID must be unique"
-
-      # SQL Test: Amount must be greater than 0
-      - name: "check_positive_amount"
-        type: "unexpected_rows_expectation"
-        kwargs:
-          unexpected_rows_query: |
-            SELECT loan_id, amount
-            FROM v73__loan_details
-            WHERE amount <= 0 OR amount IS NULL;
-        meta:
-          severity: "critical"
-          description: "Amount must be greater than 0"
-
-      - name: "check_term_range_sql"
-        type: "unexpected_rows_expectation"
-        kwargs:
-          unexpected_rows_query: |
-            SELECT loan_id, term_value
-            FROM v73__loan_details
-            WHERE term_value < 12 OR term_value > 300;
-        meta:
-          severity: "critical"
-          description: "Term must be between 12 and 300 months"
-
-  # ----------------------------------------
-  # TABLE 3: application_approval_to_funding 
+  # TABLE 2: application_approval_to_funding 
   # ----------------------------------------
   v73__application_approval_to_funding:
     primary_key: "application_id"
@@ -364,7 +323,7 @@ tables:
           description: "Autopay method must be present when contract amount exists"
 
   # ----------------------------------------
-  # TABLE 4: transaction_details 
+  # TABLE 3: transaction_details 
   # ----------------------------------------
   v73__transaction_details:
     primary_key: "order_id"
@@ -482,3 +441,103 @@ tables:
         meta:
           severity: "warning"
           description: "Ofee payment method is required when the ofee flag is set."
+
+  # ----------------------------------------
+  # TABLE 4: LOAN_DETAILS
+  # ----------------------------------------
+  v73__loan_details:
+    primary_key: "loan_id"
+    expectations:
+      - name: "check_loan_id_unique"
+        type: "unexpected_rows_expectation"
+        kwargs:
+          unexpected_rows_query: |
+            SELECT loan_id, COUNT(*) AS cnt
+            FROM v73__loan_details
+            GROUP BY loan_id
+            HAVING COUNT(*) > 1;
+        meta:
+          severity: "critical"
+          description: "Loan ID must be unique"
+
+      # SQL Test: Amount must be greater than 0
+      - name: "check_positive_amount"
+        type: "unexpected_rows_expectation"
+        kwargs:
+          unexpected_rows_query: |
+            SELECT loan_id, amount
+            FROM v73__loan_details
+            WHERE amount <= 0 OR amount IS NULL;
+        meta:
+          severity: "critical"
+          description: "Amount must be greater than 0"
+
+      - name: "check_term_range_sql"
+        type: "unexpected_rows_expectation"
+        kwargs:
+          unexpected_rows_query: |
+            SELECT loan_id, term_value
+            FROM v73__loan_details
+            WHERE term_value < 12 OR term_value > 300;
+        meta:
+          severity: "critical"
+          description: "Term must be between 12 and 300 months"
+
+      # Check 1: Orphan Loan or Unfunded App Consistency
+      - name: "check_loan_exists_with_funding"
+        type: "unexpected_rows_expectation"
+        kwargs:
+          unexpected_rows_query: |
+            SELECT ld.application_id
+            FROM data_warehouse.v73__loan_details AS ld
+            LEFT JOIN data_warehouse.v73__application_approval_to_funding AS atf ON ld.application_id = atf.application_id
+            WHERE ld.application_id IS NULL OR atf.total_funded_amt <= 0
+        meta:
+          severity: "critical"
+          description: "A loan record should not exist without a corresponding funded application (amt > 0)."
+
+      # Checks 2, 3, 4, 7, 9: Critical Data Presence & Value Range
+      - name: "check_loan_core_fields_integrity"
+        type: "unexpected_rows_expectation"
+        kwargs:
+          unexpected_rows_query: |
+            SELECT application_id 
+            FROM v73__loan_details 
+            WHERE loan_id IS NULL 
+               OR lms_customer_id IS NULL 
+               OR amount <= 0 OR amount IS NULL
+               OR interest_begin_date IS NULL 
+               OR effective_at IS NULL
+        meta:
+          severity: "critical"
+          description: "Core LMS identifiers, amounts, and dates must be present and valid."
+      
+      # Check 5 & 6: APR and Term Consistency with Offer
+      - name: "check_loan_terms_match_offer"
+        type: "unexpected_rows_expectation"
+        kwargs:
+          unexpected_rows_query: |
+            SELECT ld.application_id
+            FROM data_warehouse.v73__loan_details AS ld
+            LEFT JOIN data_warehouse.v73__application_approval_to_funding AS atf ON ld.application_id = atf.application_id
+            LEFT JOIN data_warehouse.offer_details AS od ON atf.selected_offer_id = od.offer_id
+            WHERE (ld.apr < 0 OR ld.apr != od.apr)
+               OR (ld.term_value != od.term)
+        meta:
+          severity: "critical"
+          description: "Loan APR and Term must exactly match the selected offer details."
+
+      # Check 8: Autopay Logic Validation
+      - name: "check_loan_autopay_compliance"
+        type: "unexpected_rows_expectation"
+        kwargs:
+          unexpected_rows_query: |
+            SELECT ld.application_id
+            FROM data_warehouse.v73__loan_details AS ld
+            LEFT JOIN data_warehouse.v73__application_approval_to_funding AS atf ON ld.application_id = atf.application_id
+            LEFT JOIN data_warehouse.offer_details AS od ON atf.selected_offer_id = od.offer_id
+            WHERE (ld.is_autopay_set NOT IN (0, 1))
+               OR (ld.is_autopay_set != od.is_autopay_required)
+        meta:
+          severity: "warning"
+          description: "Autopay status must be a boolean (0/1) and match the offer's requirement."
