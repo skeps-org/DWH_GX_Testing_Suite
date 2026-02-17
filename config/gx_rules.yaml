@@ -541,3 +541,67 @@ tables:
         meta:
           severity: "warning"
           description: "Autopay status must be a boolean (0/1) and match the offer's requirement."
+
+  # ----------------------------------------
+  # TABLE 5: OFFER_DETAILS
+  # ----------------------------------------
+  v73__offer_details:
+    primary_key: "offer_id"
+    expectations:
+      # Checks 1, 2, 5, 7, 8: Core Identity and Constant Flags
+      - name: "check_offer_identity_and_constants"
+        type: "unexpected_rows_expectation"
+        kwargs:
+          unexpected_rows_query: |
+            SELECT offer_id, application_id 
+            FROM v73__offer_details 
+            WHERE application_id IS NULL 
+               OR offer_id IS NULL
+               OR (term = 0 OR term IS NULL)
+               OR first_payment != 0
+               OR shown != 1
+        meta:
+          severity: "critical"
+          description: "Offers must have IDs, non-zero terms, zero first payment, and must be marked as 'shown'."
+
+      # Checks 6, 9, 10, 11, 12: Range & Non-Negative Validations
+      - name: "check_offer_financial_ranges"
+        type: "unexpected_rows_expectation"
+        kwargs:
+          unexpected_rows_query: |
+            SELECT offer_id 
+            FROM v73__offer_details 
+            WHERE apr < 0 
+               OR payment_amount < 0 
+               OR mdr < 0 
+               OR min_amount < 0 
+               OR max_amount < 0
+        meta:
+          severity: "critical"
+          description: "Financial values (APR, Payment, MDR, Min/Max Amount) cannot be negative."
+      
+      # Check 3: Foreign Key Integrity for Parent Offers
+      - name: "check_parent_offer_existence"
+        type: "unexpected_rows_expectation"
+        kwargs:
+          unexpected_rows_query: |
+            SELECT od1.offer_id, od1.parent_offer_id
+            FROM v73__offer_details AS od1
+            WHERE od1.parent_offer_id IS NOT NULL
+              AND od1.parent_offer_id NOT IN (SELECT offer_id FROM v73__offer_details)
+        meta:
+          severity: "critical"
+          description: "Every parent_offer_id must correspond to a valid offer_id within the same table."
+
+      # Check 4 & 13: Conditional Logic for Incentivized/Autopay Offers
+      - name: "check_offer_conditional_logic"
+        type: "unexpected_rows_expectation"
+        kwargs:
+          unexpected_rows_query: |
+            SELECT offer_id 
+            FROM v73__offer_details 
+            WHERE (parent_offer_id IS NULL AND (is_incentivized = 1 OR is_autopay_required = 1))
+               OR (parent_offer_id IS NOT NULL AND (is_incentivized = 0 OR is_autopay_required = 0))
+        meta:
+          severity: "warning"
+          description: "Logic check: Parent offers must not be incentivized/autopay-required; child offers must be."
