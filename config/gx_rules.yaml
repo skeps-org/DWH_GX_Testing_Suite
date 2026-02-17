@@ -650,3 +650,62 @@ tables:
         meta:
           severity: "critical"
           description: "Hard pulls must have valid success indicators in the response JSON; response data cannot be null."
+
+  # ----------------------------------------
+  # TABLE 7: OFFER_EVALUATION
+  # ----------------------------------------
+  v73__offer_evaluation:
+    primary_key: "application_id"
+    expectations:
+      # Checks 1, 2, 4, 7: Core Metadata Presence
+      - name: "check_evaluation_core_metadata_nulls"
+        type: "unexpected_rows_expectation"
+        kwargs:
+          unexpected_rows_query: |
+            SELECT application_id 
+            FROM v73__offer_evaluation 
+            WHERE application_id IS NULL 
+               OR evaluation_type IS NULL 
+               OR decision_data IS NULL 
+               OR evaluated_at IS NULL
+        meta:
+          severity: "critical"
+          description: "Core evaluation fields (ID, Type, Decision Data, and Timestamp) are mandatory."
+
+      # Check 3: Decision Validity
+      - name: "check_decision_enum_values"
+        type: "unexpected_rows_expectation"
+        kwargs:
+          unexpected_rows_query: |
+            SELECT application_id, decision 
+            FROM v73__offer_evaluation 
+            WHERE decision IS NULL 
+               OR decision NOT IN ('APPROVED', 'DECLINED')
+        meta:
+          severity: "critical"
+          description: "Evaluation decision must be explicitly 'APPROVED' or 'DECLINED'."
+
+      # Check 5: Evaluation Data Conditional Logic
+      - name: "check_evaluation_data_type_dependency"
+        type: "unexpected_rows_expectation"
+        kwargs:
+          unexpected_rows_query: |
+            SELECT application_id, evaluation_type 
+            FROM v73__offer_evaluation 
+            WHERE (evaluation_type = 'VALIDATE_EVALUATION' AND evaluation_data IS NOT NULL)
+               OR (evaluation_type != 'VALIDATE_EVALUATION' AND evaluation_data IS NULL)
+        meta:
+          severity: "critical"
+          description: "Evaluation data presence must align with the specific evaluation type."
+
+      # Check 6: Customer Offer Flag
+      - name: "check_is_customer_offer_flag"
+        type: "unexpected_rows_expectation"
+        kwargs:
+          unexpected_rows_query: |
+            SELECT application_id 
+            FROM v73__offer_evaluation 
+            WHERE is_customer_offer != 1
+        meta:
+          severity: "critical"
+          description: "Expects all offers to be customer-facing offers (flag = 1)."
