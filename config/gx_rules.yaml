@@ -605,3 +605,48 @@ tables:
         meta:
           severity: "warning"
           description: "Logic check: Parent offers must not be incentivized/autopay-required; child offers must be."
+
+  # ----------------------------------------
+  # TABLE 6: BUREAU_DETAILS
+  # ----------------------------------------
+  v73__bureau_details:
+    primary_key: "application_id"
+    expectations:
+      # Check 1 & 3: Mandatory Identifiers
+      - name: "check_bureau_mandatory_identifiers"
+        type: "unexpected_rows_expectation"
+        kwargs:
+          unexpected_rows_query: |
+            SELECT application_id 
+            FROM v73__bureau_details 
+            WHERE application_id IS NULL 
+               OR bureau_pull_time IS NULL
+        meta:
+          severity: "critical"
+          description: "Application ID and Bureau Pull Time must not be null."
+
+      # Check 2: Bureau Pull Type Validity
+      - name: "check_valid_bureau_pull_types"
+        type: "unexpected_rows_expectation"
+        kwargs:
+          unexpected_rows_query: |
+            SELECT application_id, bureau_pull_type 
+            FROM v73__bureau_details 
+            WHERE bureau_pull_type IS NULL 
+               OR bureau_pull_type NOT IN ('TRANSUNION_PD_SOFT', 'TRANSUNION_PD_HARD', 'TRANSUNION_LYON_HARD')
+        meta:
+          severity: "warning"
+          description: "Bureau Pull Type must be one of the approved TransUnion codes."
+
+      # Check 4: Success Response for Hard Pulls
+      - name: "check_hard_pull_response_integrity"
+        type: "unexpected_rows_expectation"
+        kwargs:
+          unexpected_rows_query: |
+            SELECT application_id, bureau_pull_type 
+            FROM v73__bureau_details 
+            WHERE response_data IS NULL 
+               OR (bureau_pull_type LIKE '%PD_HARD%' AND response_data NOT LIKE '%success%true%')
+        meta:
+          severity: "critical"
+          description: "Hard pulls must have valid success indicators in the response JSON; response data cannot be null."
