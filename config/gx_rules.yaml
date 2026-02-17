@@ -242,10 +242,42 @@ tables:
   # ----------------------------------------
   v73__application_approval_to_funding:
     primary_key: "application_id"
-    expectations:
-      # COMPLEX QUERY: JOIN CHECK
-      # Scenario: Verify we don't have an empty selected_offer_id for a closed loan.
-      # We select the "Bad Rows" (Failures). If count > 0, the test fails.
+    expectations:   
+      # Check 2: Application timestamp not null
+      - name: "check_application_timestamp_not_null"
+        type: "unexpected_rows_expectation"
+        kwargs:
+          unexpected_rows_query: |
+            SELECT application_id
+            FROM v73__application_approval_to_funding
+            WHERE application_timestamp IS NULL;
+        meta:
+          severity: "critical"
+          description: "Application timestamp must not be null"
+
+      # Check 4 & 5: Merchant and Store Mapping
+      - name: "check_merchant_and_store_presence"
+        type: "unexpected_rows_expectation"
+        kwargs:
+          unexpected_rows_query: |
+            SELECT application_id FROM v73__application_approval_to_funding 
+            WHERE merchant_id IS NULL OR store_id IS NULL
+        meta:
+          severity: "critical"
+          description: "Merchant ID and Store ID cannot be null."
+      
+      # Check 6a: Contract requirements
+      - name: "check_selected_offerid_contract"
+        type: "unexpected_rows_expectation"
+        kwargs:
+          unexpected_rows_query: |
+            SELECT application_id FROM v73__application_approval_to_funding 
+            WHERE (contract_amt != 0 AND selected_offer_id IS NULL)
+        meta:
+          severity: "warning"
+          description: "Active contracts must have a selected offer defined"
+      
+      # Check 6b: selected_offer_id should not be empty for a closed loan.
       - name: "check_selected_offerid_loan"
         type: "unexpected_rows_expectation"
         kwargs:
@@ -258,3 +290,75 @@ tables:
         meta:
           severity: "critical"
           description: "Selected Offer Id should not be NULL for Closed Loans"
+      
+      # Check 7 & 8: Contract Amount and Timestamp Alignment
+      - name: "check_contract_timestamp_logic"
+        type: "unexpected_rows_expectation"
+        kwargs:
+          unexpected_rows_query: |
+            SELECT application_id FROM v73__application_approval_to_funding 
+            WHERE (contract_amt = 0 AND contract_timestamp IS NOT NULL)
+               OR (contract_amt != 0 AND contract_timestamp IS NULL)
+        meta:
+          severity: "warning"
+          description: "Contract timestamp presence must match the non-zero status of the contract amount."
+
+      # Check 9: Funded Amount vs Loan Details
+      - name: "check_funded_amt_vs_loan_details"
+        type: "unexpected_rows_expectation"
+        kwargs:
+          unexpected_rows_query: |
+            SELECT atf.application_id
+            FROM data_warehouse.v73__application_approval_to_funding AS atf
+            LEFT JOIN data_warehouse.v69__loan_details AS ld ON atf.application_id = ld.application_id
+            WHERE (atf.total_funded_amt > atf.contract_amt)
+               OR (atf.total_funded_amt != ld.amount)
+               OR (atf.total_funded_amt > 0 AND ld.application_id IS NULL)
+        meta:
+          severity: "critical"
+          description: "Total funded amount must match the primary loan detail record and stay within contract limits."
+
+      # Check 10 & 11: Funding Timestamps vs Disbursement Records
+      - name: "check_funding_timestamps_vs_disbursements"
+        type: "unexpected_rows_expectation"
+        kwargs:
+          unexpected_rows_query: |
+            SELECT atf.application_id
+            FROM data_warehouse.v73__application_approval_to_funding AS atf
+            LEFT JOIN (
+                SELECT application_id, MIN(updated_at) AS fft, MAX(updated_at) AS lft
+                FROM data_warehouse.v69__pos_card_disbursement
+                GROUP BY application_id
+            ) AS pcd ON atf.application_id = pcd.application_id
+            WHERE atf.first_funding_timestamp != pcd.fft
+               OR atf.last_funding_timestamp != pcd.lft
+               OR (atf.total_funded_amt > 0 AND (atf.first_funding_timestamp IS NULL OR atf.last_funding_timestamp IS NULL))
+        meta:
+          severity: "warning"
+          description: "Aggregated funding timestamps must match the individual disbursement transaction logs."
+
+      # Check 12 & 13: Financial Boundary Validations
+      - name: "check_funding_and_void_boundaries"
+        type: "unexpected_rows_expectation"
+        kwargs:
+          unexpected_rows_query: |
+            SELECT application_id FROM v73__application_approval_to_funding 
+            WHERE (total_refunded_amt < 0) 
+               OR (total_refunded_amt > total_funded_amt)
+               OR (voided_amt + total_funded_amt > contract_amt)
+        meta:
+          severity: "critical"
+          description: "Total refunds must be within funded limits, and total outlays (void + funded) cannot exceed contract amount."
+
+      # Check 16: Autopay requirements
+      - name: "check_autopay_method_required_when_contract_present"
+        type: "unexpected_rows_expectation"
+        kwargs:
+          unexpected_rows_query: |
+            SELECT application_id
+            FROM v73__application_approval_to_funding
+            WHERE contract_amt IS NOT NULL
+              AND autopay_method IS NULL;
+        meta:
+          severity: "critical"
+          description: "Autopay method must be present when contract amount exists"
