@@ -1,4 +1,5 @@
 from src.gx_wrapper import GXRunner
+from src.notifier import send_summary_email
 import concurrent.futures
 import pandas as pd
 import logging
@@ -106,6 +107,10 @@ def main():
             logger.warning(f"Detected {len(failures)} failures. Check 'failed_rows/' directory for CSV reports.")
         else:
             logger.info("All GX checks passed across all tables.")
+            
+        # Send the HTML Summary via email
+        send_summary_email(html_output, len(failures))
+
     else:
         logger.warning("No results generated.")
 
