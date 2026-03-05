@@ -8,8 +8,10 @@ The system utilizes a **Hub-and-Spoke** architecture. A central Python engine (T
 * **Core Engine:** Python 3.9+
 * **Validation Framework:** Great Expectations (GX) v1.0+
     * *Why:* Provides standard statistical tests and robust "Unexpected Rows" handling out of the box.
-* **Concurrency:** `concurrent.futures.ThreadPoolExecutor`
-    * *Why:* Efficient handling of I/O bound database queries.
+* **Concurrency:** `concurrent.futures.ProcessPoolExecutor`
+    * *Why:* Switched to multi-processing because Great Expectations context is not thread-safe. Each worker runs in its own memory space to avoid "datasource not found" errors.
+* **Reporting:** Pandas `Styler` (HTML/CSS)
+    * *Why:* Enables high-fidelity, Streamlit-like formatting in automated email reports.
 * **Interface:** Streamlit
     * *Why:* Rapid UI development for internal tools.
 * **Database Connectivity:** `SQLAlchemy` + `mysql-connector-python`
@@ -32,8 +34,9 @@ This class encapsulates the Great Expectations complexity.
     6.  Parses the complex GX Result Object into a flat Pandas DataFrame.
 
 #### 2.3 Notification System (`src/notifier.py`)
-* Accepts a DataFrame of failed tests.
-* Generates an HTML body with a CSS-styled table.
+* Accepts a DataFrame of failed tests or a raw HTML summary.
+* Generates a high-fidelity HTML body with Streamlit-like CSS styling.
+* **Security:** Supports loading passwords via environment variables (`SMTP_PASSWORD`) for production safety.
 
 ### 3. Application Flow Diagram
 
@@ -41,11 +44,12 @@ This class encapsulates the Great Expectations complexity.
 1.  **Trigger:** Windows Task Scheduler executes `daily_job.py`.
 2.  **Init:** Script loads `secrets.toml` and `gx_rules.yaml`.
 3.  **Fan-Out:** Script spawns Worker Threads.
-4.  **Execute:** Each thread claims a Lender, connects to MySQL, runs SQL checks.
-5.  **Fan-In:** Results from all threads are merged into a Master DataFrame.
+4.  **Execute:** Each process claims a Lender, connects to MySQL, runs SQL checks.
+5.  **Fan-In:** Results from all processes are merged into a Master DataFrame.
 6.  **Outcome:**
-    * If `Failures == 0`: Log "Success" and exit.
-    * If `Failures > 0`: Failure CSVs are automatically generated in `failed_rows/` during execution. Log failure count to `dq_system.log`.
+    *   **Always:** Save a timestamped HTML summary report (mimicking Streamlit UI).
+    *   **Alert:** Dispatch HTML summary directly to stakeholders via Gmail SMTP (relay fallback).
+    *   **Logs:** Failure CSVs are automatically generated in `failed_rows/` during execution. log failures to `dq_system.log`.
 
 #### 3.2 Manual User Flow (UI)
 1.  **Trigger:** User opens Streamlit App in browser.

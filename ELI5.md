@@ -27,7 +27,8 @@ Think of your script like an airplane. If it crashes while you are asleep, you n
 **File:** `secrets.toml` (**The Safe**)
 * **Analogy:** Your physical wallet.
 * **Purpose:** Stores your passwords, database hostnames, and API keys.
-* **Why:** You never want to paste passwords directly into your code (`.py` files). If you share your code with a colleague, you don't want to accidentally give them your passwords.
+* **Why:** You never want to paste passwords directly into your code. 
+* **New Security Upgrade:** You can now also use an **Environment Variable** (The "Alternative Key") to provide the email password without writing it in any file at all. 
 
 **File:** `config/gx_rules.yaml` (**The Rulebook**)
 * **Analogy:** A checklist for a safety inspector.
@@ -45,8 +46,8 @@ Think of your script like an airplane. If it crashes while you are asleep, you n
 * **Purpose:** It reads the **Rulebook** (`gx_rules.yaml`), picks the keys from the **Safe** (`secrets.toml`), drives to the **Database**, and checks if the data follows the rules. It doesn't decide *what* to do; it just follows instructions.
 
 **File:** `src/notifier.py` (**The Messenger**)
-* **Analogy:** The mail carrier.
-* **Purpose:** Its only job is to take a list of failures, make them look pretty (put them in a table with red colors), and drop them in your email inbox.
+* **Analogy:** The mail carrier delivering a high-res photograph.
+* **Purpose:** It takes the list of failures, makes them look like a premium dashboard (complete with colors and formatting), and drops them in your inbox. It even knows how to ask Gmail for help if the main post office is closed!
 
 **File:** `src/app.py` (**The Remote Control**)
 * **Analogy:** A TV Remote or Dashboard.
@@ -73,4 +74,5 @@ Think of your script like an airplane. If it crashes while you are asleep, you n
 3.  `gx_wrapper.py` grabs the **passwords** (`secrets.toml`) and the **checklist** (`gx_rules.yaml`).
 4.  It checks the databases and writes what it's doing to the **Diary** (`logs/`).
 5.  If it finds broken data, it hands the list to `notifier.py`.
-6.  `notifier.py` sends you an email.
+6.  `notifier.py` sends you a beautiful summary email.
+7.  A clean HTML report is saved with a timestamp so you can check history.

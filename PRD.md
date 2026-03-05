@@ -21,12 +21,12 @@ We are building a production-grade Data Quality (DQ) framework to validate data 
 | **FR-02** | **Configurable Rules** | Validation rules must be defined in a human-readable config file (YAML), not hardcoded in Python.
 | **FR-03** | **Automated Surveillance** | A scheduled job must run all tests across all lenders daily (e.g., 6:00 AM) without human intervention.
 | **FR-04** | **Manual UI Trigger** | A simple Dashboard (Streamlit) must allow users to trigger validations for a specific lender on demand.
-| **FR-05** | **Alerting** | Critical failures must trigger an email to `data.engineering` and `analytics` teams with a summary report.
-| **FR-06** | **Parallel Execution** | Tests should run concurrently to ensure the daily job finishes within the maintenance window.
-| **FR-07** | **Detailed Reporting** | System must generate a downloadable CSV containing ALL failed rows (bypassing any display limits) for root cause analysis.
+| **FR-05** | **Alerting** | Critical failures and daily summaries must be emailed to teams as a high-fidelity HTML report with Streamlit-like styling.
+| **FR-06** | **Parallel Execution** | Tests should run concurrently using multi-processing to ensure thread-safety and performance.
+| **FR-07** | **Detailed Reporting** | In addition to HTML summaries, the system must generate downloadable CSVs containing ALL failed rows for root cause analysis.
 
 ### 5. Non-Functional Requirements (NFR)
 * **Scalability:** Must handle more lenders without code refactoring.
-* **Security:** Database credentials must be isolated from the code logic (via `secrets.toml`).
-* **Auditability:** All runs (manual and automated) must produce a log file.
-* **Maintainability:** Built on standard libraries (Great Expectations, Pandas) to ensure longevity.
+* **Security:** Database and SMTP credentials must be isolated via `secrets.toml`, with support for Environment Variables for sensitive passwords.
+* **Auditability:** All runs (manual and automated) must produce a log file and a timestamped HTML summary.
+* **Maintainability:** Built on standard libraries (Great Expectations, Pandas) and modular design to ensure longevity.
