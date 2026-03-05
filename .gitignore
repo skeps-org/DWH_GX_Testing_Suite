@@ -4,3 +4,5 @@ dq_system.log
 .DS_Store
 tests/test_csv_generation.py
 failed_rows/*
+failed_rows_app/*
+summary_report*.html
