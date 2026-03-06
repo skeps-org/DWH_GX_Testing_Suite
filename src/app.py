@@ -86,8 +86,14 @@ if run_btn:
             else: color = 'red'
             return f'color: {color}; font-weight: bold'
 
+        styler = final_df.style
+        if hasattr(styler, 'map'):
+            styled_df = styler.map(color_status, subset=['status'])
+        else:
+            styled_df = styler.applymap(color_status, subset=['status'])
+
         st.dataframe(
-            final_df.style.map(color_status, subset=['status']), 
+            styled_df, 
             use_container_width=True,
             column_config={
                 "failed_rows": st.column_config.NumberColumn(format="%d"),
