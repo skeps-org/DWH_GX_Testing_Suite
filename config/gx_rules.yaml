@@ -10,6 +10,16 @@ tables:
   v73__application_to_lender:
     primary_key: "application_id"
     expectations:
+      - name: "check_atl_table_refreshing"
+        type: "unexpected_rows_expectation"
+        kwargs:
+          unexpected_rows_query: |
+            SELECT IF(MAX(updatedAt) < CURRENT_DATE, 'Warning: Table is not refreshing!', '') AS status
+            FROM v73__application_to_lender;
+        meta:
+          severity: "critical"
+          description: "Table is not refreshing"
+
       - name: "check_application_id_not_null"
         type: "unexpected_rows_expectation"
         kwargs:
@@ -201,7 +211,17 @@ tables:
   # ----------------------------------------
   v73__application_approval_to_funding:
     primary_key: "application_id"
-    expectations:   
+    expectations: 
+      - name: "check_atf_table_refreshing"
+        type: "unexpected_rows_expectation"
+        kwargs:
+          unexpected_rows_query: |
+            SELECT IF(MAX(updatedAt) < CURRENT_DATE, 'Warning: Table is not refreshing!', '') AS status
+            FROM v73__application_approval_to_funding;
+        meta:
+          severity: "critical"
+          description: "Table is not refreshing"
+
       # Check 2: Application timestamp not null
       - name: "check_application_timestamp_not_null"
         type: "unexpected_rows_expectation"
@@ -330,7 +350,17 @@ tables:
   # ----------------------------------------
   v73__transaction_details:
     primary_key: "order_id"
-    expectations:   
+    expectations:  
+      - name: "check_td_table_refreshing"
+        type: "unexpected_rows_expectation"
+        kwargs:
+          unexpected_rows_query: |
+            SELECT IF(MAX(updatedAt) < CURRENT_DATE, 'Warning: Table is not refreshing!', '') AS status
+            FROM v73__transaction_details;
+        meta:
+          severity: "critical"
+          description: "Table is not refreshing"
+
       # Checks 1, 2, 4, 5, 6, 7, 8: Mandatory Column Validations
       - name: "check_mandatory_transaction_columns"
         type: "unexpected_rows_expectation"
@@ -615,6 +645,16 @@ tables:
   v73__bureau_details:
     primary_key: "application_id"
     expectations:
+      - name: "check_bd_table_refreshing"
+        type: "unexpected_rows_expectation"
+        kwargs:
+          unexpected_rows_query: |
+            SELECT IF(MAX(updatedAt) < CURRENT_DATE, 'Warning: Table is not refreshing!', '') AS status
+            FROM v73__bureau_details;
+        meta:
+          severity: "critical"
+          description: "Table is not refreshing"
+
       # Check 1 & 3: Mandatory Identifiers
       - name: "check_bureau_mandatory_identifiers"
         type: "unexpected_rows_expectation"
@@ -660,6 +700,16 @@ tables:
   v73__offer_evaluation:
     primary_key: "application_id"
     expectations:
+      - name: "check_oe_table_refreshing"
+        type: "unexpected_rows_expectation"
+        kwargs:
+          unexpected_rows_query: |
+            SELECT IF(MAX(updatedAt) < CURRENT_DATE, 'Warning: Table is not refreshing!', '') AS status
+            FROM v73__offer_evaluation;
+        meta:
+          severity: "critical"
+          description: "Table is not refreshing"
+
       # Checks 1, 2, 4, 7: Core Metadata Presence
       - name: "check_evaluation_core_metadata_nulls"
         type: "unexpected_rows_expectation"
