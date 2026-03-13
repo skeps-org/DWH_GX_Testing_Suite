@@ -14,7 +14,7 @@ tables:
         type: "unexpected_rows_expectation"
         kwargs:
           unexpected_rows_query: |
-            SELECT IF(MAX(updatedAt) < CURRENT_DATE, 'Warning: Table is not refreshing!', '') AS status
+            SELECT IF(MAX(application_timestamp) < CURRENT_DATE, 'Warning: Table is not refreshing!', '') AS status
             FROM v73__application_to_lender;
         meta:
           severity: "critical"
@@ -216,7 +216,7 @@ tables:
         type: "unexpected_rows_expectation"
         kwargs:
           unexpected_rows_query: |
-            SELECT IF(MAX(updatedAt) < CURRENT_DATE, 'Warning: Table is not refreshing!', '') AS status
+            SELECT IF(MAX(application_timestamp) < CURRENT_DATE, 'Warning: Table is not refreshing!', '') AS status
             FROM v73__application_approval_to_funding;
         meta:
           severity: "critical"
@@ -355,7 +355,7 @@ tables:
         type: "unexpected_rows_expectation"
         kwargs:
           unexpected_rows_query: |
-            SELECT IF(MAX(updatedAt) < CURRENT_DATE, 'Warning: Table is not refreshing!', '') AS status
+            SELECT IF(MAX(transaction_timestamp) < CURRENT_DATE, 'Warning: Table is not refreshing!', '') AS status
             FROM v73__transaction_details;
         meta:
           severity: "critical"
@@ -649,7 +649,7 @@ tables:
         type: "unexpected_rows_expectation"
         kwargs:
           unexpected_rows_query: |
-            SELECT IF(MAX(updatedAt) < CURRENT_DATE, 'Warning: Table is not refreshing!', '') AS status
+            SELECT IF(MAX(bureau_pull_time) < CURRENT_DATE, 'Warning: Table is not refreshing!', '') AS status
             FROM v73__bureau_details;
         meta:
           severity: "critical"
@@ -704,7 +704,7 @@ tables:
         type: "unexpected_rows_expectation"
         kwargs:
           unexpected_rows_query: |
-            SELECT IF(MAX(updatedAt) < CURRENT_DATE, 'Warning: Table is not refreshing!', '') AS status
+            SELECT IF(MAX(evaluated_at) < CURRENT_DATE, 'Warning: Table is not refreshing!', '') AS status
             FROM v73__offer_evaluation;
         meta:
           severity: "critical"
