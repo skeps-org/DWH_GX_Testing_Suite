@@ -207,6 +207,32 @@ tables:
           severity: "critical"
           description: "FICO score in application table must match bureau details JSON"
 
+      # Check 26: App Final Decision Logic
+      - name: "check_app_final_decision_logic"
+        type: "unexpected_rows_expectation"
+        kwargs:
+          unexpected_rows_query: |
+            SELECT atl.application_id
+            FROM v73__application_to_lender atl
+            LEFT JOIN (
+              SELECT application_id, decision
+              FROM (
+                SELECT application_id, decision,
+                       ROW_NUMBER() OVER (PARTITION BY application_id ORDER BY evaluated_at DESC) as rn
+                FROM v73__offer_evaluation
+              ) latest_evals
+              WHERE rn = 1
+            ) oe ON atl.application_id = oe.application_id
+            WHERE 
+              CASE 
+                WHEN atl.ind_manual_review IS NULL THEN atl.app_final_decision != atl.app_auto_decision
+                WHEN atl.latest_status = 'EXPIRED' THEN atl.app_final_decision != oe.decision
+                ELSE atl.app_final_decision != atl.latest_status
+              END;
+        meta:
+          severity: "warning"
+          description: "App final decision logic based on manual review, latest status, and latest offer evaluation."
+
       # Check 24: DTI Calculation
       - name: "check_calculated_dti"
         type: "unexpected_rows_expectation"
