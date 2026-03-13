@@ -188,7 +188,7 @@ tables:
                 WHEN stated_income_max_loan_amt > 50000 AND income_verification_method IS NULL THEN maximum_avl_amt != 50000
                 WHEN verified_income > original_total_monthly_income*12 OR stated_income_max_loan_amt < 50000 THEN maximum_avl_amt != stated_income_max_loan_amt
                 ELSE maximum_avl_amt != 50000 
-            END;
+              END;
         meta:
           severity: "critical"
           description: "Maximum available amount calculation issues"
@@ -219,6 +219,20 @@ tables:
         meta:
           severity: "critical"
           description: "Calculated DTI must equal pre_funding_debt divided by monthly_income"
+      
+      # Check 25: Income Verification Indicator Logic
+      - name: "check_ind_income_verification_logic"
+        type: "unexpected_rows_expectation"
+        kwargs:
+          unexpected_rows_query: |
+            SELECT application_id
+            FROM v73__application_to_lender
+            WHERE pending_checks LIKE '%INCOME_VERIFICATION%' 
+              AND (ind_income_verification != 1 OR ind_income_verification IS NULL);
+        meta:
+          severity: "warning"
+          description: "Income verification indicator must be 1 if INCOME_VERIFICATION is in pending checks."
+
 
   # ----------------------------------------
   # TABLE 2: application_approval_to_funding 
