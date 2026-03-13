@@ -259,6 +259,26 @@ tables:
           severity: "warning"
           description: "Income verification indicator must be 1 if INCOME_VERIFICATION is in pending checks."
 
+      # Check 27: Last Decision Timestamp Logic
+      - name: "check_last_decision_timestamp"
+        type: "unexpected_rows_expectation"
+        kwargs:
+          unexpected_rows_query: |
+            SELECT atl.application_id
+            FROM v73__application_to_lender atl
+            LEFT JOIN (
+              SELECT application_id, MAX(evaluated_at) AS max_evaluated_at
+              FROM v73__offer_evaluation
+              WHERE evaluation_type IN ('INITIAL_EVALUATION', 'CLEAR_PENDING')
+              GROUP BY application_id
+            ) oe ON atl.application_id = oe.application_id
+            WHERE atl.last_decision_timestamp != oe.max_evaluated_at
+               OR (atl.last_decision_timestamp IS NOT NULL AND oe.max_evaluated_at IS NULL)
+               OR (atl.last_decision_timestamp IS NULL AND oe.max_evaluated_at IS NOT NULL);
+        meta:
+          severity: "warning"
+          description: "last_decision_timestamp must match the latest evaluated_at for INITIAL_EVALUATION or CLEAR_PENDING from offer_evaluation."
+
 
   # ----------------------------------------
   # TABLE 2: application_approval_to_funding 
