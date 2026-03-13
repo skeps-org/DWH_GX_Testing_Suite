@@ -47,12 +47,24 @@ tables:
         type: "unexpected_rows_expectation"
         kwargs:
           unexpected_rows_query: |
-            SELECT application_id FROM v73__application_to_lender
-            WHERE ((ind_manual_review IS NULL OR ind_manual_review = 0) AND app_auto_decision = 'SOFT_PENDING')
-               OR (ind_manual_review = 1 AND app_auto_decision IN ('APPROVED', 'DECLINED'));
+            SELECT atl.application_id
+            FROM v73__application_to_lender atl
+            LEFT JOIN v73__transaction_details td ON atl.application_id = td.application_id
+            WHERE 
+              CASE 
+                WHEN atl.latest_status IN ('CREATED', 'SUBMITTED') THEN
+                  CASE 
+                    WHEN td.decline_reason_code IS NOT NULL THEN atl.app_auto_decision != 'DECLINED'
+                    ELSE atl.app_auto_decision != 'ERROR'
+                  END
+                WHEN (atl.ind_manual_review IS NULL OR atl.ind_manual_review = 0) THEN
+                  atl.app_auto_decision NOT IN ('APPROVED', 'DECLINED')
+                ELSE
+                  atl.app_auto_decision != 'SOFT_PENDING'
+              END
         meta:
           severity: "warning"
-          description: "Auto decision must be SOFT_PENDING if manual review, else APPROVED/DECLINED"  
+          description: "Auto decision logic: CREATED/SUBMITTED -> DECLINED if reason code exists else ERROR; if not manual review -> APPROVED/DECLINED; else SOFT_PENDING"
 
       # Check 5, 7: Max Loan Amount consistency
       - name: "check_max_loan_amounts_consistency"
