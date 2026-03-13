@@ -11,6 +11,8 @@ tables:
     primary_key: "application_id"
     expectations:
       - name: "check_atl_table_refreshing"
+        # target_lenders:
+        #   - skeps_test_lender
         type: "unexpected_rows_expectation"
         kwargs:
           unexpected_rows_query: |

@@ -98,6 +98,12 @@ class GXRunner:
                     warnings.filterwarnings("ignore", message=".*unexpected_rows_query should contain the {batch} parameter.*")
                     
                     for exp_config in table_rules:
+                        # Check if this expectation has specific target lenders
+                        target_lenders = exp_config.get('target_lenders')
+                        if target_lenders and lender_id not in target_lenders:
+                            logger.info(f"[{lender_id}] Skipping test '{exp_config.get('name')}' as lender is not in target_lenders.")
+                            continue
+
                         meta_data = exp_config.get('meta', {})
                         meta_data['test_alias'] = exp_config.get('name') 
                         
