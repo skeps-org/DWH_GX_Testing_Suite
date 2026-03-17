@@ -92,6 +92,7 @@ def main():
         
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         report_filename = f'summary_report_{timestamp}.html'
+        excel_filename = f'summary_report_{timestamp}.xlsx'
         
         html_output = f"<!DOCTYPE html>\n<html>\n<head>\n<meta charset='utf-8'>\n<title>GX Summary Report - {timestamp}</title>\n{streamlit_style}\n</head>\n<body>\n<h2>🛡️ Data Warehouse Quality Control - Summary</h2>\n{html_table}\n</body>\n</html>"
 
@@ -99,6 +100,9 @@ def main():
             f.write(html_output)
             
         logger.info(f"Saved HTML summary report to '{report_filename}'.")
+        
+        summary_df.to_excel(excel_filename, index=False)
+        logger.info(f"Saved Excel summary report to '{excel_filename}'.")
 
         # Filter failures
         failures = final_df[final_df['status'] != 'PASS']
@@ -109,7 +113,7 @@ def main():
             logger.info("All GX checks passed across all tables.")
             
         # Send the HTML Summary via email
-        send_summary_email(html_output, len(failures))
+        send_summary_email(html_output, len(failures), attachment_path=excel_filename)
 
     else:
         logger.warning("No results generated.")
