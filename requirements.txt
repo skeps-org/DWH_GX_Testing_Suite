@@ -6,3 +6,4 @@ toml
 pyyaml
 streamlit
 schedule
+openpyxl
