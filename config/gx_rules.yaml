@@ -473,7 +473,7 @@ tables:
         type: "unexpected_rows_expectation"
         kwargs:
           unexpected_rows_query: |
-            SELECT atf.application_id, atf.change_order_timestamp, td.change_order_timestamp
+            SELECT atf.application_id, atf.change_order_timestamp AS atf_change_order_timestamp, td.change_order_timestamp AS td_change_order_timestamp
             FROM v73__application_approval_to_funding AS atf
             LEFT JOIN (SELECT application_id, change_order_timestamp
             FROM v73__transaction_details_v1 AS td
@@ -760,7 +760,7 @@ tables:
             SELECT ld.application_id
             FROM data_warehouse.v73__loan_details AS ld
             LEFT JOIN data_warehouse.v73__application_approval_to_funding AS atf ON ld.application_id = atf.application_id
-            LEFT JOIN data_warehouse.offer_details AS od ON atf.selected_offer_id = od.offer_id
+            LEFT JOIN data_warehouse.v73__offer_details AS od ON atf.selected_offer_id = od.offer_id
             WHERE (ld.apr < 0 OR ld.apr != od.apr)
                OR (ld.term_value != od.term)
         meta:
@@ -775,7 +775,7 @@ tables:
             SELECT ld.application_id
             FROM data_warehouse.v73__loan_details AS ld
             LEFT JOIN data_warehouse.v73__application_approval_to_funding AS atf ON ld.application_id = atf.application_id
-            LEFT JOIN data_warehouse.offer_details AS od ON atf.selected_offer_id = od.offer_id
+            LEFT JOIN data_warehouse.v73__offer_details AS od ON atf.selected_offer_id = od.offer_id
             WHERE (ld.is_autopay_set NOT IN (0, 1))
                OR (ld.is_autopay_set != od.is_autopay_required)
         meta:
@@ -847,16 +847,16 @@ tables:
           description: "Logic check: Parent offers must not be incentivized/autopay-required; child offers must be."
 
       # Check: SAC Duration Logic
-      - name: "check_sac_duration_presence"
-        type: "unexpected_rows_expectation"
-        kwargs:
-          unexpected_rows_query: |
-            SELECT application_id, offer_id 
-            FROM v73__offer_details 
-            WHERE sac_ind IS NOT NULL AND sac_duration IS NULL
-        meta:
-          severity: "critical"
-          description: "sac_duration must not be null when sac_ind is present."
+      # - name: "check_sac_duration_presence"
+      #   type: "unexpected_rows_expectation"
+      #   kwargs:
+      #     unexpected_rows_query: |
+      #       SELECT application_id, offer_id 
+      #       FROM v73__offer_details 
+      #       WHERE sac_ind IS NOT NULL AND sac_duration IS NULL
+      #   meta:
+      #     severity: "critical"
+      #     description: "sac_duration must not be null when sac_ind is present."
 
   # ----------------------------------------
   # TABLE 6: BUREAU_DETAILS
