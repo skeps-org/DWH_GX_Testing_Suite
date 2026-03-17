@@ -47,7 +47,7 @@ def main():
         final_df = pd.concat(all_results, ignore_index=True)
         
         # Generate HTML Summary Report
-        cols = ['status', 'lender', 'table', 'test_name', 'failed_rows', 'total_rows', 'severity', 'error_msg']
+        cols = ['status', 'lender', 'table', 'test_description', 'failed_rows', 'total_rows', 'severity', 'error_msg']
         existing_cols = [c for c in cols if c in final_df.columns]
         summary_df = final_df[existing_cols]
 

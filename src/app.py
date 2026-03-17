@@ -76,7 +76,7 @@ if run_btn:
 
     # 3. DISPLAY RESULTS
     if not final_df.empty:
-        cols = ['status', 'lender', 'table', 'test_name', 'failed_rows', 'total_rows', 'severity', 'error_msg']
+        cols = ['status', 'lender', 'table', 'test_description', 'failed_rows', 'total_rows', 'severity', 'error_msg']
         existing_cols = [c for c in cols if c in final_df.columns]
         final_df = final_df[existing_cols]
 
@@ -112,7 +112,7 @@ if run_btn:
             st.subheader("🔍 Failure Details")
             
             for index, row in fails_or_errors.iterrows():
-                with st.expander(f"{row['status']}: {row['test_name']} ({row['table']})", expanded=True):
+                with st.expander(f"{row['status']}: {row['test_description']} ({row['table']})", expanded=True):
                     if row['status'] == 'ERROR':
                         st.code(row['error_msg'], language="sql")
                     else:

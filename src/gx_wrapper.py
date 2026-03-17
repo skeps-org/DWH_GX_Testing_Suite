@@ -157,7 +157,7 @@ class GXRunner:
                 "lender": lender_id,
                 "table": "SYSTEM",
                 "status": "CRITICAL_ERROR",
-                "test_name": "GX_Execution",
+                "test_description": "GX_Execution",
                 "error_msg": str(e),
                 "severity": "critical",
                 "failed_rows": 0,
@@ -260,7 +260,7 @@ class GXRunner:
             parsed_rows.append({
                 "lender": lender_id,
                 "table": table_name,
-                "test_name": display_name,
+                "test_description": meta.get('description', display_name),
                 "status": status,
                 "failed_rows": unexpected_count,
                 "total_rows": element_count,
