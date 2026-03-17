@@ -16,7 +16,7 @@ tables:
         type: "unexpected_rows_expectation"
         kwargs:
           unexpected_rows_query: |
-            SELECT IF(MAX(application_timestamp) < CURRENT_DATE, 'Warning: Table is not refreshing!', '') AS status
+            SELECT IF(MAX(application_timestamp) < NOW() - INTERVAL 24 HOUR, 'Warning: Table is not refreshing!', '') AS status
             FROM v73__application_to_lender;
         meta:
           severity: "critical"
@@ -290,7 +290,7 @@ tables:
         type: "unexpected_rows_expectation"
         kwargs:
           unexpected_rows_query: |
-            SELECT IF(MAX(application_timestamp) < CURRENT_DATE, 'Warning: Table is not refreshing!', '') AS status
+            SELECT IF(MAX(application_timestamp) < NOW() - INTERVAL 24 HOUR, 'Warning: Table is not refreshing!', '') AS status
             FROM v73__application_approval_to_funding;
         meta:
           severity: "critical"
@@ -419,6 +419,91 @@ tables:
           severity: "critical"
           description: "Autopay method must be present when contract amount exists"
 
+      # Check: Expiry Timestamp   
+      - name: "check_expiry_timestamp"
+        type: "unexpected_rows_expectation"
+        kwargs:
+          unexpected_rows_query: |
+            SELECT atf.application_id, atf.expiry_timestamp, pca.latest_expiry_at
+            FROM v73__application_approval_to_funding AS atf
+            LEFT JOIN (
+            SELECT DISTINCT application_id, FIRST_VALUE(expiry_at) OVER(PARTITION BY application_id ORDER BY created_at DESC) As latest_expiry_at
+            FROM v73__pos_card_account
+            WHERE status > 50
+            ) AS pca
+            ON atf.application_id = pca.application_id
+            WHERE NOT(atf.expiry_timestamp <=> pca.latest_expiry_at);
+        meta:
+          severity: "critical"
+          description: "Expiry timestamp must match with pos_card_account expiry timestamp"
+
+      # Check: mdr_pct 
+      - name: "check_mdr_pct"
+        type: "unexpected_rows_expectation"
+        kwargs:
+          unexpected_rows_query: |
+            SELECT DISTINCT atf.application_id, atf.selected_offer_id, od.offer_id, atf.mdr_pct, od.mdr AS od_mdr
+            FROM v73__application_approval_to_funding AS atf
+            LEFT JOIN v73__offer_details AS od
+            ON atf.application_id = od.application_id
+            AND atf.selected_offer_id = od.offer_id
+            WHERE NOT(atf.mdr_pct <=> od.mdr)
+        meta:
+          severity: "critical"
+          description: "MDR percentage must match with offer details MDR percentage"
+
+      # Check: mdr_amt 
+      - name: "check_mdr_amt"
+        type: "unexpected_rows_expectation"
+        kwargs:
+          unexpected_rows_query: |
+            SELECT DISTINCT atf.application_id, atf.selected_offer_id, od.offer_id, atf.total_funded_amt, atf.mdr_pct, 
+            od.mdr AS od_mdr, atf.mdr_amt, ROUND(od.mdr*atf.total_funded_amt*0.01, 2)
+            FROM v73__application_approval_to_funding AS atf
+            LEFT JOIN v73__offer_details AS od
+            ON atf.application_id = od.application_id
+            AND atf.selected_offer_id = od.offer_id
+            WHERE NOT(atf.mdr_amt <=> ROUND(od.mdr*atf.total_funded_amt*0.01, 2))
+        meta:
+          severity: "critical"
+          description: "MDR amount must match with offer details MDR amount"
+      
+      # Check: change_order_timestamp
+      - name: "check_change_order_timestamp"
+        type: "unexpected_rows_expectation"
+        kwargs:
+          unexpected_rows_query: |
+            SELECT atf.application_id, atf.change_order_timestamp, td.change_order_timestamp
+            FROM v73__application_approval_to_funding AS atf
+            LEFT JOIN (SELECT application_id, change_order_timestamp
+            FROM v73__transaction_details_v1 AS td
+            WHERE change_order_timestamp IS NOT NULL)
+            AS td
+            ON atf.application_id = td.application_id
+            WHERE NOT(atf.change_order_timestamp <=> td.change_order_timestamp);
+        meta:
+          severity: "critical"
+          description: "Change order timestamp must match with transaction details change order timestamp"
+
+      # Check: original_contract_amt
+      - name: "check_original_contract_amt"
+        type: "unexpected_rows_expectation"
+        kwargs:
+          unexpected_rows_query: |
+            SELECT atf.application_id, atf.original_contract_amt, pc.og_contract_amt
+            FROM v73__application_approval_to_funding AS atf
+            LEFT JOIN (SELECT DISTINCT application_id, FIRST_VALUE(amount) OVER(PARTITION BY pca.application_id ORDER BY pcata.created_at ASC) AS og_contract_amt
+            FROM v73__pos_card_account_to_action AS pcata
+            LEFT JOIN v73__pos_card_account AS pca
+            ON pcata.account_id = pca.pos_card_account_id
+            WHERE pcata.type = 'OPEN')
+            AS pc
+            ON atf.application_id = pc.application_id
+            WHERE NOT(atf.original_contract_amt <=> pc.og_contract_amt);
+        meta:
+          severity: "critical"
+          description: "Original contract amount must match with pos_card_account original contract amount"
+
   # ----------------------------------------
   # TABLE 3: transaction_details 
   # ----------------------------------------
@@ -429,7 +514,7 @@ tables:
         type: "unexpected_rows_expectation"
         kwargs:
           unexpected_rows_query: |
-            SELECT IF(MAX(transaction_timestamp) < CURRENT_DATE, 'Warning: Table is not refreshing!', '') AS status
+            SELECT IF(MAX(transaction_timestamp) < NOW() - INTERVAL 24 HOUR, 'Warning: Table is not refreshing!', '') AS status
             FROM v73__transaction_details;
         meta:
           severity: "critical"
@@ -442,13 +527,14 @@ tables:
           unexpected_rows_query: |
             SELECT order_id 
             FROM v73__transaction_details 
-            WHERE order_id IS NULL 
-               OR flow_type IS NULL 
-               OR merchant_id IS NULL 
-               OR store_id IS NULL 
-               OR entry_point IS NULL 
-               OR transaction_timestamp IS NULL 
-               OR status IS NULL
+            WHERE order_id IS NULL
+            OR transaction_id IS NULL 
+            OR flow_type IS NULL 
+            OR merchant_id IS NULL 
+            OR store_id IS NULL 
+            OR entry_point IS NULL 
+            OR transaction_timestamp IS NULL 
+            OR status IS NULL
         meta:
           severity: "critical"
           description: "Core transactional identifiers and metadata must not be null."
@@ -466,6 +552,32 @@ tables:
         meta:
           severity: "critical"
           description: "Application ID must be present for transactions beyond the initial verification stages."
+
+      # Check: Customer ID Logic
+      - name: "check_customer_id_validity_on_status"
+        type: "unexpected_rows_expectation"
+        kwargs:
+          unexpected_rows_query: |
+            SELECT order_id 
+            FROM v73__transaction_details
+            WHERE customer_id IS NULL
+              AND status IS NOT NULL
+              AND status != 'INITIATE_VERIFICATION'
+        meta:
+          severity: "critical"
+          description: "Customer ID must be present for transactions beyond INITIATE_VERIFICATION status."
+
+      # Check: Request Amount not null
+      - name: "check_request_amount_not_null"
+        type: "unexpected_rows_expectation"
+        kwargs:
+          unexpected_rows_query: |
+            SELECT order_id
+            FROM v73__transaction_details
+            WHERE request_amount IS NULL
+        meta:
+          severity: "critical"
+          description: "Request amount must be non-null for all rows."
 
       # Check 9.1 & 9.2: Decline Alignment with Lender Table
       - name: "check_transaction_decline_sync_with_lender"
@@ -527,6 +639,28 @@ tables:
           severity: "critical"
           description: "Autopay must be set when required by the offer and method must be present if flag is set."
 
+      # Check: OFEE Payment Set
+      - name: "check_ofee_payment_set"
+        type: "unexpected_rows_expectation"
+        kwargs:
+          unexpected_rows_query: |
+            SELECT order_id FROM v73__transaction_details
+            WHERE status = 'ORIGINATION_FEE_SET' AND ofee_payment_set IS NULL
+        meta:
+          severity: "critical"
+          description: "ofee_payment_set must not be null if status is ORIGINATION_FEE_SET."
+
+      # Check: OFEE Payment Amount Final
+      - name: "check_ofee_payment_amount_final"
+        type: "unexpected_rows_expectation"
+        kwargs:
+          unexpected_rows_query: |
+            SELECT order_id FROM v73__transaction_details
+            WHERE ofee_payment_set = 1 AND (ofee_amount_final <= 0 OR ofee_amount_final IS NULL)
+        meta:
+          severity: "critical"
+          description: "ofee_amount_final must be > 0 if ofee_payment_set is 1."
+
       # Check 14: Verification Payment Consistency
       - name: "check_verification_payment_method"
         type: "unexpected_rows_expectation"
@@ -538,7 +672,6 @@ tables:
           severity: "warning"
           description: "Verification payment method is required when the verification flag is set."
       
-      # Check 16: Ofee Payment Consistency
       - name: "check_ofee_payment_method"
         type: "unexpected_rows_expectation"
         kwargs:
@@ -676,7 +809,7 @@ tables:
         type: "unexpected_rows_expectation"
         kwargs:
           unexpected_rows_query: |
-            SELECT offer_id 
+            SELECT application_id, offer_id 
             FROM v73__offer_details 
             WHERE apr < 0 
                OR payment_amount < 0 
@@ -692,10 +825,10 @@ tables:
         type: "unexpected_rows_expectation"
         kwargs:
           unexpected_rows_query: |
-            SELECT od1.offer_id, od1.parent_offer_id
-            FROM v73__offer_details AS od1
-            WHERE od1.parent_offer_id IS NOT NULL
-              AND od1.parent_offer_id NOT IN (SELECT offer_id FROM v73__offer_details)
+            SELECT application_id, offer_id, parent_offer_id
+            FROM v73__offer_details 
+            WHERE parent_offer_id IS NOT NULL
+              AND parent_offer_id NOT IN (SELECT offer_id FROM v73__offer_details)
         meta:
           severity: "critical"
           description: "Every parent_offer_id must correspond to a valid offer_id within the same table."
@@ -705,13 +838,25 @@ tables:
         type: "unexpected_rows_expectation"
         kwargs:
           unexpected_rows_query: |
-            SELECT offer_id 
+            SELECT application_id, offer_id  
             FROM v73__offer_details 
             WHERE (parent_offer_id IS NULL AND (is_incentivized = 1 OR is_autopay_required = 1))
                OR (parent_offer_id IS NOT NULL AND (is_incentivized = 0 OR is_autopay_required = 0))
         meta:
           severity: "warning"
           description: "Logic check: Parent offers must not be incentivized/autopay-required; child offers must be."
+
+      # Check: SAC Duration Logic
+      - name: "check_sac_duration_presence"
+        type: "unexpected_rows_expectation"
+        kwargs:
+          unexpected_rows_query: |
+            SELECT application_id, offer_id 
+            FROM v73__offer_details 
+            WHERE sac_ind IS NOT NULL AND sac_duration IS NULL
+        meta:
+          severity: "critical"
+          description: "sac_duration must not be null when sac_ind is present."
 
   # ----------------------------------------
   # TABLE 6: BUREAU_DETAILS
@@ -723,7 +868,7 @@ tables:
         type: "unexpected_rows_expectation"
         kwargs:
           unexpected_rows_query: |
-            SELECT IF(MAX(bureau_pull_time) < CURRENT_DATE, 'Warning: Table is not refreshing!', '') AS status
+            SELECT IF(MAX(bureau_pull_time) < NOW() - INTERVAL 24 HOUR, 'Warning: Table is not refreshing!', '') AS status
             FROM v73__bureau_details;
         meta:
           severity: "critical"
@@ -763,7 +908,7 @@ tables:
             SELECT application_id, bureau_pull_type 
             FROM v73__bureau_details 
             WHERE response_data IS NULL 
-               OR (bureau_pull_type LIKE '%PD_HARD%' AND response_data NOT LIKE '%success%true%')
+               OR (bureau_pull_type LIKE '%HARD%' AND response_data NOT LIKE '%success%true%')
         meta:
           severity: "critical"
           description: "Hard pulls must have valid success indicators in the response JSON; response data cannot be null."
@@ -778,7 +923,7 @@ tables:
         type: "unexpected_rows_expectation"
         kwargs:
           unexpected_rows_query: |
-            SELECT IF(MAX(evaluated_at) < CURRENT_DATE, 'Warning: Table is not refreshing!', '') AS status
+            SELECT IF(MAX(evaluated_at) < NOW() - INTERVAL 24 HOUR, 'Warning: Table is not refreshing!', '') AS status
             FROM v73__offer_evaluation;
         meta:
           severity: "critical"
@@ -807,10 +952,10 @@ tables:
             SELECT application_id, decision 
             FROM v73__offer_evaluation 
             WHERE decision IS NULL 
-               OR decision NOT IN ('APPROVED', 'DECLINED')
+               OR decision NOT IN ('APPROVED', 'DECLINED', 'SOFT_PENDING')
         meta:
           severity: "critical"
-          description: "Evaluation decision must be explicitly 'APPROVED' or 'DECLINED'."
+          description: "Evaluation decision must be explicitly 'APPROVED', 'DECLINED' or 'SOFT_PENDING'."
 
       # Check 5: Evaluation Data Conditional Logic
       - name: "check_evaluation_data_type_dependency"
