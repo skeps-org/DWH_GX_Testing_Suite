@@ -16,8 +16,9 @@ tables:
         type: "unexpected_rows_expectation"
         kwargs:
           unexpected_rows_query: |
-            SELECT IF(MAX(application_timestamp) < NOW() - INTERVAL 24 HOUR, 'Warning: Table is not refreshing!', '') AS status
-            FROM v73__application_to_lender;
+            SELECT 'Warning: Table is not refreshing!' AS status
+            FROM (SELECT MAX(application_timestamp) as max_val FROM v73__application_to_lender) t
+            WHERE max_val < NOW() - INTERVAL 24 HOUR;
         meta:
           severity: "critical"
           description: "Table is not refreshing"
@@ -290,8 +291,9 @@ tables:
         type: "unexpected_rows_expectation"
         kwargs:
           unexpected_rows_query: |
-            SELECT IF(MAX(application_timestamp) < NOW() - INTERVAL 24 HOUR, 'Warning: Table is not refreshing!', '') AS status
-            FROM v73__application_approval_to_funding;
+            SELECT 'Warning: Table is not refreshing!' AS status
+            FROM (SELECT MAX(application_timestamp) as max_val FROM v73__application_approval_to_funding) t
+            WHERE max_val < NOW() - INTERVAL 24 HOUR;
         meta:
           severity: "critical"
           description: "Table is not refreshing"
@@ -514,8 +516,9 @@ tables:
         type: "unexpected_rows_expectation"
         kwargs:
           unexpected_rows_query: |
-            SELECT IF(MAX(transaction_timestamp) < NOW() - INTERVAL 24 HOUR, 'Warning: Table is not refreshing!', '') AS status
-            FROM v73__transaction_details;
+            SELECT 'Warning: Table is not refreshing!' AS status
+            FROM (SELECT MAX(transaction_timestamp) as max_val FROM v73__transaction_details) t
+            WHERE max_val < NOW() - INTERVAL 24 HOUR;
         meta:
           severity: "critical"
           description: "Table is not refreshing"
@@ -868,8 +871,9 @@ tables:
         type: "unexpected_rows_expectation"
         kwargs:
           unexpected_rows_query: |
-            SELECT IF(MAX(bureau_pull_time) < NOW() - INTERVAL 24 HOUR, 'Warning: Table is not refreshing!', '') AS status
-            FROM v73__bureau_details;
+            SELECT 'Warning: Table is not refreshing!' AS status
+            FROM (SELECT MAX(bureau_pull_time) as max_val FROM v73__bureau_details) t
+            WHERE max_val < NOW() - INTERVAL 24 HOUR;
         meta:
           severity: "critical"
           description: "Table is not refreshing"
@@ -923,8 +927,9 @@ tables:
         type: "unexpected_rows_expectation"
         kwargs:
           unexpected_rows_query: |
-            SELECT IF(MAX(evaluated_at) < NOW() - INTERVAL 24 HOUR, 'Warning: Table is not refreshing!', '') AS status
-            FROM v73__offer_evaluation;
+            SELECT 'Warning: Table is not refreshing!' AS status
+            FROM (SELECT MAX(evaluated_at) as max_val FROM v73__offer_evaluation) t
+            WHERE max_val < NOW() - INTERVAL 24 HOUR;
         meta:
           severity: "critical"
           description: "Table is not refreshing"
