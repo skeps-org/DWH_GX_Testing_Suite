@@ -900,7 +900,7 @@ tables:
             SELECT application_id, bureau_pull_type 
             FROM v73__bureau_details 
             WHERE bureau_pull_type IS NULL 
-               OR bureau_pull_type NOT IN ('TRANSUNION_PD_SOFT', 'TRANSUNION_PD_HARD', 'TRANSUNION_LYON_HARD')
+               OR bureau_pull_type NOT IN ('TRANSUNION_PD_SOFT', 'TRANSUNION_PD_HARD', 'TRANSUNION_LYON_HARD', 'TRANSUNION_SOFT', 'TRANSUNION_HARD')
         meta:
           severity: "warning"
           description: "Bureau Pull Type must be one of the approved TransUnion codes."
