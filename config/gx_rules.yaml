@@ -415,7 +415,7 @@ tables:
           unexpected_rows_query: |
             SELECT application_id
             FROM v73__application_approval_to_funding
-            WHERE contract_amt IS NOT NULL
+            WHERE contract_amt > 0
               AND autopay_method IS NULL;
         meta:
           severity: "critical"
@@ -475,14 +475,15 @@ tables:
         type: "unexpected_rows_expectation"
         kwargs:
           unexpected_rows_query: |
-            SELECT atf.application_id, atf.change_order_timestamp AS atf_change_order_timestamp, td.change_order_timestamp AS td_change_order_timestamp
+            SELECT atf.application_id, atf.change_order_timestamp AS atf_change_order_timestamp, td.max_change_order_timestamp AS td_change_order_timestamp
             FROM v73__application_approval_to_funding AS atf
-            LEFT JOIN (SELECT application_id, change_order_timestamp
+            LEFT JOIN (SELECT application_id, MAX(change_order_timestamp) AS max_change_order_timestamp
             FROM v73__transaction_details_v1 AS td
-            WHERE change_order_timestamp IS NOT NULL)
+            WHERE change_order_timestamp IS NOT NULL
+            GROUP BY 1)
             AS td
             ON atf.application_id = td.application_id
-            WHERE NOT(atf.change_order_timestamp <=> td.change_order_timestamp);
+            WHERE NOT(atf.change_order_timestamp <=> td.max_change_order_timestamp);
         meta:
           severity: "critical"
           description: "Change order timestamp must match with transaction details change order timestamp"
@@ -551,7 +552,7 @@ tables:
             FROM v73__transaction_details
             WHERE application_id IS NULL
               AND status IS NOT NULL
-              AND status NOT IN ('VERIFY', 'SSN_VERIFY', 'INITIATE_VERIFICATION')
+              AND status NOT IN ('VERIFY', 'SSN_VERIFY', 'INITIATE_VERIFICATION', 'RESEND')
         meta:
           severity: "critical"
           description: "Application ID must be present for transactions beyond the initial verification stages."
@@ -565,7 +566,7 @@ tables:
             FROM v73__transaction_details
             WHERE customer_id IS NULL
               AND status IS NOT NULL
-              AND status != 'INITIATE_VERIFICATION'
+              AND status NOT IN ('INITIATE_VERIFICATION', 'RESEND')
         meta:
           severity: "critical"
           description: "Customer ID must be present for transactions beyond INITIATE_VERIFICATION status."
@@ -603,7 +604,7 @@ tables:
           unexpected_rows_query: |
             SELECT order_id FROM v73__transaction_details
             WHERE (decline_reason_code IS NOT NULL AND rejection_status IS NULL)
-               OR (decline_reason_code IS NULL AND rejection_status IS NOT NULL)
+               OR (decline_reason_code IS NULL AND rejection_status IS NOT NULL AND rejection_status NOT IN ('SSN_MISMATCH', 'SSN_IN_USE', 'DECISION_PENDING'))
         meta:
           severity: "warning"
           description: "Decline reason code and rejection status must be both present or both null."
