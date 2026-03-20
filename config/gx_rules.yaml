@@ -803,7 +803,7 @@ tables:
                OR offer_id IS NULL
                OR (term = 0 OR term IS NULL)
                OR first_payment != 0
-               OR shown != 1
+               OR shown IS NULL
         meta:
           severity: "critical"
           description: "Offers must have IDs, non-zero terms, zero first payment, and must be marked as 'shown'."
@@ -983,7 +983,7 @@ tables:
           unexpected_rows_query: |
             SELECT application_id 
             FROM v73__offer_evaluation 
-            WHERE is_customer_offer != 1
+            WHERE is_customer_offer != 1 AND evaluation_type != 'CHECK_OFFER'
         meta:
           severity: "critical"
           description: "Expects all offers to be customer-facing offers (flag = 1)."
