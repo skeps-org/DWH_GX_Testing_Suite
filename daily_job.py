@@ -50,6 +50,7 @@ def main():
         cols = ['status', 'lender', 'table', 'test_description', 'failed_rows', 'total_rows', 'severity', 'error_msg']
         existing_cols = [c for c in cols if c in final_df.columns]
         summary_df = final_df[existing_cols]
+        summary_df = summary_df[summary_df['status'] == 'FAIL']
 
         def color_status(val):
             if val == 'PASS': color = 'green'
