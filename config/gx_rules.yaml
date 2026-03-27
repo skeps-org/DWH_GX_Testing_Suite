@@ -761,12 +761,21 @@ tables:
         type: "unexpected_rows_expectation"
         kwargs:
           unexpected_rows_query: |
-            SELECT ld.application_id
+            SELECT application_id 
+            FROM (
+            SELECT ld.application_id, atf.selected_offer_id, ld.apr AS ld_apr, od.apr AS od_apr, ld.term_value, od.term, od.transaction_id AS od_txn_id, td.transaction_id, td.transaction_timestamp, 
+            ROW_NUMBER() OVER(PARTITION BY ld.application_id ORDER BY td.transaction_timestamp DESC) AS rk
             FROM data_warehouse.v73__loan_details AS ld
             LEFT JOIN data_warehouse.v73__application_approval_to_funding AS atf ON ld.application_id = atf.application_id
-            LEFT JOIN data_warehouse.v73__offer_details AS od ON atf.selected_offer_id = od.offer_id
-            WHERE (ld.apr < 0 OR ld.apr != od.apr)
-               OR (ld.term_value != od.term)
+            LEFT JOIN data_warehouse.v73__transaction_details AS td 
+            ON td.application_id = atf.application_id
+            INNER JOIN data_warehouse.v73__offer_details AS od 
+            ON atf.selected_offer_id = od.offer_id
+            AND td.transaction_id = od.transaction_id
+            ) t
+            WHERE rk = 1
+            AND ( (ld_apr < 0 OR ld_apr != od_apr)
+            OR (term_value != term));
         meta:
           severity: "critical"
           description: "Loan APR and Term must exactly match the selected offer details."
@@ -776,12 +785,21 @@ tables:
         type: "unexpected_rows_expectation"
         kwargs:
           unexpected_rows_query: |
-            SELECT ld.application_id
+            SELECT application_id FROM (
+            SELECT ld.application_id, atf.selected_offer_id, ld.is_autopay_set, od.is_autopay_required, od.transaction_id AS od_txn_id, td.transaction_id, td.transaction_timestamp, 
+            ROW_NUMBER() OVER(PARTITION BY ld.application_id ORDER BY td.transaction_timestamp DESC) AS rk
             FROM data_warehouse.v73__loan_details AS ld
-            LEFT JOIN data_warehouse.v73__application_approval_to_funding AS atf ON ld.application_id = atf.application_id
-            LEFT JOIN data_warehouse.v73__offer_details AS od ON atf.selected_offer_id = od.offer_id
-            WHERE (ld.is_autopay_set NOT IN (0, 1))
-               OR (ld.is_autopay_set != od.is_autopay_required)
+            LEFT JOIN data_warehouse.v73__application_approval_to_funding AS atf 
+            ON ld.application_id = atf.application_id
+            LEFT JOIN data_warehouse.v73__transaction_details AS td 
+            ON td.application_id = atf.application_id
+            INNER JOIN data_warehouse.v73__offer_details AS od 
+            ON atf.selected_offer_id = od.offer_id
+            AND td.transaction_id = od.transaction_id
+            ) t
+            WHERE rk = 1
+            AND ((is_autopay_set NOT IN (0, 1))
+            OR NOT(is_autopay_set <=> is_autopay_required))
         meta:
           severity: "warning"
           description: "Autopay status must be a boolean (0/1) and match the offer's requirement."
