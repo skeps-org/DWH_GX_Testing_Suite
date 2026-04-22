@@ -760,6 +760,33 @@ tables:
           severity: "warning"
           description: "Ofee payment method is required when the ofee flag is set."
 
+      # Check: Verification Payment Set logic
+      - name: "check_verification_payment_set_logic"
+        type: "unexpected_rows_expectation"
+        kwargs:
+          unexpected_rows_query: |
+            SELECT td.transaction_id
+            FROM v73__transaction_details AS td
+            LEFT JOIN v73__application_approval_to_funding AS atf 
+              ON td.application_id = atf.application_id
+            LEFT JOIN (
+              SELECT application_id, status
+              FROM (
+                SELECT application_id, status,
+                       ROW_NUMBER() OVER(PARTITION BY application_id ORDER BY created_at DESC) AS rn
+                FROM v73__pos_pg_gateway_transaction_gateway
+                WHERE type IN ('BANK_ACCOUNT_LINK', 'BANK_ACCOUNT_LINK_2', 'AUTOPAY_WITH_BANK_ACCOUNT_LINK')
+              ) t
+              WHERE rn = 1
+            ) AS pg 
+              ON td.application_id = pg.application_id
+            WHERE (atf.contract_amt > 0 OR atf.contract_timestamp IS NOT NULL)
+              AND pg.status IN (300, 400, 500)
+              AND (td.verification_payment_set != 1 OR td.verification_payment_set IS NULL);
+        meta:
+          severity: "critical"
+          description: "verification_payment_set must be 1 when contract exists in ATF and last BANK_ACCOUNT_LINK/AUTOPAY transaction status is in (300, 400, 500)"
+
   # ----------------------------------------
   # TABLE 4: LOAN_DETAILS
   # ----------------------------------------
