@@ -384,7 +384,9 @@ tables:
                   SELECT application_id, MIN(pcd.updated_at) AS fft, MAX(pcd.updated_at) AS lft
                   FROM v73__pos_card_disbursement AS pcd
                   LEFT JOIN v73__pos_card_account AS pca
-                      ON pcd.account_id = pca.pos_card_account_id
+                  ON pcd.account_id = pca.pos_card_account_id
+                  WHERE pcd.type = 'OUTFLOW'
+                  AND pcd.status = 300
                   GROUP BY application_id
               ) AS pcd
                   ON atf.application_id = pcd.application_id
@@ -918,7 +920,7 @@ tables:
             SELECT application_id, bureau_pull_type 
             FROM v73__bureau_details 
             WHERE bureau_pull_type IS NULL 
-               OR bureau_pull_type NOT IN ('TRANSUNION_PD_SOFT', 'TRANSUNION_PD_HARD', 'TRANSUNION_LYON_HARD', 'TRANSUNION_SOFT', 'TRANSUNION_HARD')
+               OR bureau_pull_type NOT IN ('TRANSUNION_PD_SOFT', 'TRANSUNION_PD_HARD', 'TRANSUNION_LYON_HARD', 'TRANSUNION_SOFT', 'TRANSUNION_HARD', 'TRANSUNION_CP_SOFT', 'TRANSUNION_CP_HARD')
         meta:
           severity: "warning"
           description: "Bureau Pull Type must be one of the approved TransUnion codes."
