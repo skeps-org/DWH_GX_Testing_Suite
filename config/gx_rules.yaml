@@ -724,6 +724,22 @@ tables:
           unexpected_rows_query: |
             SELECT order_id FROM v73__transaction_details
             WHERE status = 'ORIGINATION_FEE_SET' AND ofee_payment_set IS NULL
+            UNION ALL
+            SELECT td.order_id
+            FROM v73__transaction_details AS td
+            LEFT JOIN (
+              SELECT application_id, status
+              FROM (
+                SELECT application_id, status,
+                       ROW_NUMBER() OVER(PARTITION BY application_id ORDER BY created_at DESC) AS rn
+                FROM v73__pos_pg_gateway_transaction
+                WHERE type IN ('ORIGINATION_FEE')
+              ) t
+              WHERE rn = 1
+            ) AS pg 
+              ON td.application_id = pg.application_id
+            WHERE pg.status IN (300, 400, 500)
+              AND (td.ofee_payment_set != 1 OR td.ofee_payment_set IS NULL);
         meta:
           severity: "critical"
           description: "ofee_payment_set must not be null if status is ORIGINATION_FEE_SET."
@@ -774,7 +790,7 @@ tables:
               FROM (
                 SELECT application_id, status,
                        ROW_NUMBER() OVER(PARTITION BY application_id ORDER BY created_at DESC) AS rn
-                FROM v73__pos_pg_gateway_transaction_gateway
+                FROM v73__pos_pg_gateway_transaction
                 WHERE type IN ('BANK_ACCOUNT_LINK', 'BANK_ACCOUNT_LINK_2', 'AUTOPAY_WITH_BANK_ACCOUNT_LINK')
               ) t
               WHERE rn = 1
