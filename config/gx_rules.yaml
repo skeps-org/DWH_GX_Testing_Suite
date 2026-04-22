@@ -509,6 +509,76 @@ tables:
           severity: "critical"
           description: "Original contract amount must match with pos_card_account original contract amount"
 
+      # Check: ofee_amount_final
+      - name: "check_atf_ofee_amount_final"
+        type: "unexpected_rows_expectation"
+        kwargs:
+          unexpected_rows_query: |
+            SELECT atf.application_id, atf.ofee_amount_final, pg.expected_amount
+            FROM v73__application_approval_to_funding AS atf
+            LEFT JOIN (
+              SELECT application_id, amount AS expected_amount
+              FROM (
+                SELECT pgt.application_id, pgta.amount,
+                       ROW_NUMBER() OVER(PARTITION BY pgt.application_id ORDER BY pgta.created_at DESC) AS rn
+                FROM v73__pos_pg_gateway_transaction AS pgt
+                INNER JOIN v73__pos_pg_gateway_transaction_to_action AS pgta
+                  ON pgt.pos_pg_gateway_transaction_id = pgta.gateway_transaction_id
+                WHERE pgt.type = 'ORIGINATION_FEE' 
+                  AND pgta.type = 'AUTH_CAPTURE' 
+                  AND pgta.status = 700 
+                  AND pgt.status = 300
+              ) t
+              WHERE rn = 1
+            ) AS pg ON atf.application_id = pg.application_id
+            WHERE NOT(atf.ofee_amount_final <=> pg.expected_amount);
+        meta:
+          severity: "critical"
+          description: "ofee_amount_final must match the last AUTH_CAPTURE amount for ORIGINATION_FEE"
+
+      # Check: ofee_payment_method
+      - name: "check_atf_ofee_payment_method"
+        type: "unexpected_rows_expectation"
+        kwargs:
+          unexpected_rows_query: |
+            SELECT atf.application_id, atf.ofee_payment_method, pg.expected_method
+            FROM v73__application_approval_to_funding AS atf
+            LEFT JOIN (
+              SELECT application_id, gateway AS expected_method
+              FROM (
+                SELECT application_id, gateway,
+                       ROW_NUMBER() OVER(PARTITION BY application_id ORDER BY created_at DESC) AS rn
+                FROM v73__pos_pg_gateway_transaction
+                WHERE status = 300
+              ) t
+              WHERE rn = 1
+            ) AS pg ON atf.application_id = pg.application_id
+            WHERE NOT(atf.ofee_payment_method <=> pg.expected_method);
+        meta:
+          severity: "critical"
+          description: "ofee_payment_method must match the gateway of the last successful transaction"
+
+      # Check: ofee_payment_status
+      - name: "check_atf_ofee_payment_status"
+        type: "unexpected_rows_expectation"
+        kwargs:
+          unexpected_rows_query: |
+            SELECT atf.application_id, atf.ofee_payment_status, pg.expected_status
+            FROM v73__application_approval_to_funding AS atf
+            LEFT JOIN (
+              SELECT application_id, status AS expected_status
+              FROM (
+                SELECT application_id, status,
+                       ROW_NUMBER() OVER(PARTITION BY application_id ORDER BY created_at DESC) AS rn
+                FROM v73__pos_pg_gateway_transaction
+              ) t
+              WHERE rn = 1
+            ) AS pg ON atf.application_id = pg.application_id
+            WHERE NOT(atf.ofee_payment_status <=> pg.expected_status);
+        meta:
+          severity: "critical"
+          description: "ofee_payment_status must match the status from the last gateway transaction"
+
   # ----------------------------------------
   # TABLE 3: transaction_details 
   # ----------------------------------------
