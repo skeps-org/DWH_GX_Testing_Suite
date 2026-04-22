@@ -280,6 +280,87 @@ tables:
           severity: "warning"
           description: "last_decision_timestamp must match the latest evaluated_at for INITIAL_EVALUATION or CLEAR_PENDING from offer_evaluation."
 
+      # Check: MRD latest status mapping
+      - name: "check_mrd_latest_status_mapping"
+        type: "unexpected_rows_expectation"
+        kwargs:
+          unexpected_rows_query: |
+            SELECT atl.application_id
+            FROM v73__application_to_lender AS atl
+            INNER JOIN v73__mrd_application AS mrd ON atl.application_id = mrd.application_id
+            WHERE atl.latest_status != CASE 
+              WHEN mrd.status = 100 THEN 'CREATED'
+              WHEN mrd.status = 200 THEN 'SUBMITTED'
+              WHEN mrd.status IN (1000, 1050, 1070, 1100, 1200, 2100) THEN 'PENDING'
+              WHEN mrd.status IN (3000, 3040, 3045, 3050, 3060, 3100, 4050, 4100, 5100, 5200) THEN 'APPROVED'
+              WHEN mrd.status IN (10000, 10010) THEN 'READY_TO_FUND'
+              WHEN mrd.status = 15000 THEN 'PARTIALLY_FUNDED'
+              WHEN mrd.status = 16000 THEN 'FUNDING_REQUEST_RAISED'
+              WHEN mrd.status = 17000 THEN 'FUNDING_REQUEST_APPROVED'
+              WHEN mrd.status = 20000 THEN 'FUNDED'
+              WHEN mrd.status = 21000 THEN 'FUNDING_REQUEST_REJECTED'
+              WHEN mrd.status = 21500 THEN 'FUNDING_REQUEST_CANCELED'
+              WHEN mrd.status = 22000 THEN 'FUNDING_REQUEST_EXPIRED'
+              WHEN mrd.status = 25000 THEN 'PARTIALLY_REFUNDED'
+              WHEN mrd.status = 30000 THEN 'REFUNDED'
+              WHEN mrd.status = 50000 THEN 'CANCELED'
+              WHEN mrd.status IN (51000, 52000, 53000) THEN 'EXPIRED'
+              WHEN mrd.status IN (60000, 60010) THEN 'DECLINED'
+              ELSE atl.latest_status
+            END;
+        meta:
+          severity: "critical"
+          description: "latest_status must map to mrd.status according to the MRD_Status_Mapping"
+
+      # Check: MRD latest sub status mapping
+      - name: "check_mrd_latest_sub_status_mapping"
+        type: "unexpected_rows_expectation"
+        kwargs:
+          unexpected_rows_query: |
+            SELECT atl.application_id
+            FROM v73__application_to_lender AS atl
+            INNER JOIN v73__mrd_application AS mrd ON atl.application_id = mrd.application_id
+            WHERE CASE
+              WHEN mrd.status = 100 AND atl.latest_sub_status NOT IN ('CREATED') THEN 1
+              WHEN mrd.status = 200 AND atl.latest_sub_status NOT IN ('SUBMITTED') THEN 1
+              WHEN mrd.status = 1000 AND atl.latest_sub_status NOT IN ('PENDING') THEN 1
+              WHEN mrd.status = 1050 AND atl.latest_sub_status NOT IN ('SOFT_PENDING') THEN 1
+              WHEN mrd.status = 1070 AND atl.latest_sub_status NOT IN ('PENDING_WITH_CUSTOMER') THEN 1
+              WHEN mrd.status = 1100 AND atl.latest_sub_status NOT IN ('PENDING_WITH_LENDER', 'HARD_PENDING', 'PENDING') THEN 1
+              WHEN mrd.status = 1200 AND atl.latest_sub_status NOT IN ('DOCUMENT_SUBMITTED') THEN 1
+              WHEN mrd.status = 2100 AND atl.latest_sub_status NOT IN ('DOCUMENT_REQUESTED') THEN 1
+              WHEN mrd.status = 3000 AND atl.latest_sub_status NOT IN ('APPROVED') THEN 1
+              WHEN mrd.status = 3040 AND atl.latest_sub_status NOT IN ('INCOME_VERIFICATION_PENDING') THEN 1
+              WHEN mrd.status = 3045 AND atl.latest_sub_status NOT IN ('INCOME_VERIFICATION_DOCUMENT_SUBMITTED') THEN 1
+              WHEN mrd.status = 3050 AND atl.latest_sub_status NOT IN ('INCOME_VERIFICATION_APPROVED', 'STIPULATION_APPROVED') THEN 1
+              WHEN mrd.status = 3060 AND atl.latest_sub_status NOT IN ('STIPULATION_DECLINED') THEN 1
+              WHEN mrd.status = 3100 AND atl.latest_sub_status NOT IN ('WORK_ORDER_SUBMITTED') THEN 1
+              WHEN mrd.status = 4050 AND atl.latest_sub_status NOT IN ('INCOME_VERIFICATION_DOCUMENT_REQUESTED') THEN 1
+              WHEN mrd.status = 4100 AND atl.latest_sub_status NOT IN ('WORK_ORDER_REQUEST') THEN 1
+              WHEN mrd.status = 5100 AND atl.latest_sub_status NOT IN ('AWAITING_BORROWER_SIGNATURE') THEN 1
+              WHEN mrd.status = 5200 AND atl.latest_sub_status NOT IN ('AWAITING_COBORROWER_SIGNATURE') THEN 1
+              WHEN mrd.status = 10000 AND atl.latest_sub_status NOT IN ('AWAITING_FUNDING_REQUEST') THEN 1
+              WHEN mrd.status = 10010 AND atl.latest_sub_status NOT IN ('REVISE_BLOCKED') THEN 1
+              WHEN mrd.status = 15000 AND atl.latest_sub_status NOT IN ('PARTIALLY_FUNDED') THEN 1
+              WHEN mrd.status = 16000 AND atl.latest_sub_status NOT IN ('FUNDING_REQUEST_RAISED') THEN 1
+              WHEN mrd.status = 17000 AND atl.latest_sub_status NOT IN ('FUNDING_REQUEST_APPROVED') THEN 1
+              WHEN mrd.status = 20000 AND atl.latest_sub_status NOT IN ('FUNDED') THEN 1
+              WHEN mrd.status = 21000 AND atl.latest_sub_status NOT IN ('FUNDING_REQUEST_REJECTED') THEN 1
+              WHEN mrd.status = 21500 AND atl.latest_sub_status NOT IN ('FUNDING_REQUEST_CANCELED') THEN 1
+              WHEN mrd.status = 22000 AND atl.latest_sub_status NOT IN ('FUNDING_REQUEST_EXPIRED') THEN 1
+              WHEN mrd.status = 25000 AND atl.latest_sub_status NOT IN ('PARTIALLY_REFUNDED') THEN 1
+              WHEN mrd.status = 30000 AND atl.latest_sub_status NOT IN ('REFUNDED') THEN 1
+              WHEN mrd.status = 50000 AND atl.latest_sub_status NOT IN ('CANCELLED') THEN 1
+              WHEN mrd.status = 51000 AND atl.latest_sub_status NOT IN ('EXPIRED') THEN 1
+              WHEN mrd.status = 52000 AND atl.latest_sub_status NOT IN ('SOFT_PENDING_EXPIRED') THEN 1
+              WHEN mrd.status = 53000 AND atl.latest_sub_status NOT IN ('HARD_PENDING_EXPIRED') THEN 1
+              WHEN mrd.status = 60000 AND atl.latest_sub_status NOT IN ('DECLINED') THEN 1
+              WHEN mrd.status = 60010 AND atl.latest_sub_status NOT IN ('REMOVE_DECLINE_EMBARGO') THEN 1
+              ELSE 0
+            END = 1;
+        meta:
+          severity: "critical"
+          description: "latest_sub_status must map to mrd.status according to the MRD_Status_Mapping"
 
   # ----------------------------------------
   # TABLE 2: application_approval_to_funding 
