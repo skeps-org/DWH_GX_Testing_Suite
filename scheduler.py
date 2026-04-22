@@ -18,7 +18,7 @@ def job():
 
 def main():
     # Configure the time you want the job to run (24-hour format)
-    run_time = "18:50"
+    run_time = "17:10"
     
     logger.info(f"=== Custom Python Scheduler Started ===")
     logger.info(f"Job scheduled to run daily at {run_time}")

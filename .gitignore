@@ -6,3 +6,4 @@ tests/test_csv_generation.py
 failed_rows/*
 failed_rows_app/*
 summary_report*.html
+summary_report*.xlsx

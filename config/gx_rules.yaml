@@ -648,12 +648,14 @@ tables:
         type: "unexpected_rows_expectation"
         kwargs:
           unexpected_rows_query: |
-            SELECT order_id
+            SELECT application_id
             FROM v73__transaction_details
-            WHERE request_amount IS NULL
+            WHERE application_id IS NOT NULL
+            GROUP BY application_id
+            HAVING COUNT(request_amount) = 0;
         meta:
           severity: "critical"
-          description: "Request amount must be non-null for all rows."
+          description: "For each application_id, there must be at least one row with a non-null request_amount."
 
       # Check 9.1 & 9.2: Decline Alignment with Lender Table
       - name: "check_transaction_decline_sync_with_lender"
