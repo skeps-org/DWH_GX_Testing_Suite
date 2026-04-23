@@ -705,7 +705,7 @@ tables:
             FROM v73__transaction_details
             WHERE application_id IS NULL
               AND status IS NOT NULL
-              AND status NOT IN ('VERIFY', 'SSN_VERIFY', 'INITIATE_VERIFICATION', 'RESEND')
+              AND status NOT IN ('VERIFY', 'INITIATE_VERIFICATION', 'RESEND', 'UPDATE_IDENTIFIER')
         meta:
           severity: "critical"
           description: "Application ID must be present for transactions beyond the initial verification stages."
