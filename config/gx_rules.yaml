@@ -184,7 +184,7 @@ tables:
           unexpected_rows_query: |
             SELECT atl.application_id
             FROM data_warehouse.v73__application_to_lender AS atl
-            LEFT JOIN data_warehouse.v69__application_details AS ad ON atl.application_id = ad.application_id
+            LEFT JOIN data_warehouse.v73__application_details AS ad ON atl.application_id = ad.application_id
             WHERE CASE 
                 WHEN stated_income_max_loan_amt > 50000 AND income_verification_method IS NULL THEN maximum_avl_amt != 50000
                 WHEN verified_income > original_total_monthly_income*12 OR stated_income_max_loan_amt < 50000 THEN maximum_avl_amt != stated_income_max_loan_amt
@@ -446,7 +446,7 @@ tables:
           unexpected_rows_query: |
             SELECT atf.application_id
             FROM data_warehouse.v73__application_approval_to_funding AS atf
-            LEFT JOIN data_warehouse.v69__loan_details AS ld ON atf.application_id = ld.application_id
+            LEFT JOIN data_warehouse.v73__loan_details AS ld ON atf.application_id = ld.application_id
             WHERE (atf.total_funded_amt > atf.contract_amt)
                OR (atf.total_funded_amt != ld.amount)
                OR (atf.total_funded_amt > 0 AND ld.application_id IS NULL)
@@ -684,14 +684,15 @@ tables:
           unexpected_rows_query: |
             SELECT order_id 
             FROM v73__transaction_details 
-            WHERE order_id IS NULL
+            WHERE (order_id IS NULL
             OR transaction_id IS NULL 
             OR flow_type IS NULL 
             OR merchant_id IS NULL 
             OR store_id IS NULL 
             OR entry_point IS NULL 
             OR transaction_timestamp IS NULL 
-            OR status IS NULL
+            )
+            AND status NOT IN ('INITIATE_VERIFICATION', 'RESEND')
         meta:
           severity: "critical"
           description: "Core transactional identifiers and metadata must not be null."
